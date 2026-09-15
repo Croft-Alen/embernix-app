@@ -2,16 +2,18 @@ import Link from "next/link";
 
 import {
   ExternalLink,
+  FileArchive,
   History,
   ImageIcon,
   Images,
+  Link2,
   ListChecks,
   Package,
   Search,
+  ShoppingBag,
 } from "lucide-react";
 
 import ProductCoverUploader from "@/components/admin/ProductCoverUploader";
-
 import ProductFeaturesEditor, {
   type ProductFeatureItem,
 } from "@/components/admin/ProductFeaturesEditor";
@@ -30,34 +32,70 @@ import ProductVersionsEditor, {
   type ProductVersionItem,
 } from "@/components/admin/ProductVersionsEditor";
 
+/* =========================================================
+   TYPES
+========================================================= */
+
 export type ProductFormData = {
   id: string;
 
-  name?: string | null;
-  slug?: string | null;
+  name: string;
 
-  short_description?: string | null;
-  description?: string | null;
+  slug: string;
 
-  price_cents?: number | null;
-  currency?: string | null;
+  short_description:
+    | string
+    | null;
 
-  version?: string | null;
-  image_url?: string | null;
+  description:
+    | string
+    | null;
 
-  seo_title?: string | null;
-  seo_description?: string | null;
+  price_cents: number;
 
-  demo_url?: string | null;
-  documentation_url?: string | null;
+  currency: string;
 
-  active?: boolean | null;
+  version:
+    | string
+    | null;
+
+  image_url:
+    | string
+    | null;
+
+  active: boolean;
+
+  demo_url:
+    | string
+    | null;
+
+  documentation_url:
+    | string
+    | null;
+
+  seo_title:
+    | string
+    | null;
+
+  seo_description:
+    | string
+    | null;
+
+  paddle_product_id:
+    | string
+    | null;
+
+  paddle_price_id:
+    | string
+    | null;
 };
 
 type ProductFormProps = {
   product: ProductFormData;
 
-  productFile?: ExistingProductFile;
+  productFile?:
+    | ExistingProductFile
+    | null;
 
   features?: ProductFeatureItem[];
 
@@ -65,16 +103,37 @@ type ProductFormProps = {
 
   versions?: ProductVersionItem[];
 
-  mode: "create" | "edit";
+  mode:
+    | "create"
+    | "edit";
 
   action:
-    | ((
-        formData: FormData
-      ) => void)
-    | ((
-        formData: FormData
-      ) => Promise<void>);
+    | ((formData: FormData) => void)
+    | ((formData: FormData) => Promise<void>);
 };
+
+/* =========================================================
+   STYLES
+========================================================= */
+
+const sectionClass =
+  "rounded-2xl border border-[var(--border)] bg-white p-6";
+
+const inputClass =
+  "h-11 w-full rounded-xl border border-[var(--border)] bg-white px-4 text-sm outline-none transition-colors focus:border-[var(--primary)]";
+
+const textareaClass =
+  "w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm leading-6 outline-none transition-colors focus:border-[var(--primary)]";
+
+const labelClass =
+  "mb-2 block text-sm font-medium text-[var(--foreground)]";
+
+const helperClass =
+  "mt-2 text-xs leading-5 text-[var(--muted)]";
+
+/* =========================================================
+   COMPONENT
+========================================================= */
 
 export default function ProductForm({
   product,
@@ -85,8 +144,14 @@ export default function ProductForm({
   mode,
   action,
 }: ProductFormProps) {
-  const isCreate =
-    mode === "create";
+  const isEdit =
+    mode === "edit";
+
+  const paddleConnected =
+    Boolean(
+      product.paddle_product_id &&
+        product.paddle_price_id
+    );
 
   return (
     <form
@@ -99,23 +164,31 @@ export default function ProductForm({
         value={product.id}
       />
 
-      {/* GENERAL */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <h2 className="font-semibold">
-            General
-          </h2>
+      {/* ===================================================
+          GENERAL
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <Package className="h-5 w-5" />
+          </div>
 
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Main product information used across Embernix.
-          </p>
+          <div>
+            <h2 className="font-semibold">
+              General
+            </h2>
+
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Main product information and pricing.
+            </p>
+          </div>
         </div>
 
-        <div className="grid gap-5 p-6 md:grid-cols-2">
-          <div className="md:col-span-2">
+        <div className="mt-6 grid gap-5 md:grid-cols-2">
+          <div>
             <label
               htmlFor="name"
-              className="mb-2 block text-sm font-medium"
+              className={labelClass}
             >
               Product name
             </label>
@@ -124,19 +197,18 @@ export default function ProductForm({
               id="name"
               name="name"
               defaultValue={
-                product.name ??
-                ""
+                product.name
               }
               placeholder="Zircon Modern Paymenter Theme"
+              className={inputClass}
               required
-              className="h-11 w-full rounded-xl border border-[var(--border)] px-4 text-sm focus:border-[var(--primary)]"
             />
           </div>
 
-          <div className="md:col-span-2">
+          <div>
             <label
               htmlFor="slug"
-              className="mb-2 block text-sm font-medium"
+              className={labelClass}
             >
               Slug
             </label>
@@ -145,93 +217,22 @@ export default function ProductForm({
               id="slug"
               name="slug"
               defaultValue={
-                product.slug ??
-                ""
+                product.slug
               }
               placeholder="zircon-modern-paymenter-theme"
+              className={inputClass}
               required
-              className="h-11 w-full rounded-xl border border-[var(--border)] px-4 text-sm focus:border-[var(--primary)]"
             />
 
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Used for the public product URL on embernix.org.
+            <p className={helperClass}>
+              Used by the public product URL.
             </p>
-          </div>
-
-          <div>
-            <label
-              htmlFor="price"
-              className="mb-2 block text-sm font-medium"
-            >
-              Price
-            </label>
-
-            <input
-              id="price"
-              name="price"
-              type="number"
-              min="0"
-              step="0.01"
-              required
-              defaultValue={(
-                (product.price_cents ??
-                  0) / 100
-              ).toFixed(2)}
-              className="h-11 w-full rounded-xl border border-[var(--border)] px-4 text-sm focus:border-[var(--primary)]"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="currency"
-              className="mb-2 block text-sm font-medium"
-            >
-              Currency
-            </label>
-
-            <select
-              id="currency"
-              name="currency"
-              defaultValue={
-                product.currency ??
-                "USD"
-              }
-              className="h-11 w-full rounded-xl border border-[var(--border)] bg-white px-4 text-sm focus:border-[var(--primary)]"
-            >
-              <option value="USD">
-                USD
-              </option>
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] px-4">
-              <input
-                type="checkbox"
-                name="active"
-                defaultChecked={
-                  product.active ??
-                  true
-                }
-                className="h-4 w-4"
-              />
-
-              <div>
-                <span className="block text-sm font-medium">
-                  Active product
-                </span>
-
-                <span className="mt-0.5 block text-xs text-[var(--muted)]">
-                  Controls whether the product can be shown publicly.
-                </span>
-              </div>
-            </label>
           </div>
 
           <div className="md:col-span-2">
             <label
               htmlFor="shortDescription"
-              className="mb-2 block text-sm font-medium"
+              className={labelClass}
             >
               Short description
             </label>
@@ -239,47 +240,111 @@ export default function ProductForm({
             <textarea
               id="shortDescription"
               name="shortDescription"
-              rows={3}
               defaultValue={
                 product.short_description ??
                 ""
               }
-              placeholder="Short summary shown on product cards and previews."
-              className="w-full resize-none rounded-xl border border-[var(--border)] px-4 py-3 text-sm focus:border-[var(--primary)]"
+              rows={3}
+              placeholder="Short product summary shown in listings and checkout."
+              className={textareaClass}
             />
+          </div>
+
+          <div>
+            <label
+              htmlFor="priceCents"
+              className={labelClass}
+            >
+              Price in cents
+            </label>
+
+            <input
+              id="priceCents"
+              name="priceCents"
+              type="number"
+              min="0"
+              step="1"
+              defaultValue={
+                product.price_cents
+              }
+              className={inputClass}
+              required
+            />
+
+            <p className={helperClass}>
+              Example: $12.00 = 1200.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="currency"
+              className={labelClass}
+            >
+              Currency
+            </label>
+
+            <input
+              id="currency"
+              name="currency"
+              defaultValue={
+                product.currency ||
+                "USD"
+              }
+              maxLength={3}
+              className={inputClass}
+              required
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                name="active"
+                defaultChecked={
+                  product.active
+                }
+                className="h-4 w-4 accent-[var(--primary)]"
+              />
+
+              <span>
+                <span className="block text-sm font-medium">
+                  Active product
+                </span>
+
+                <span className="mt-0.5 block text-xs text-[var(--muted)]">
+                  Active products can appear publicly and be purchased.
+                </span>
+              </span>
+            </label>
           </div>
         </div>
       </section>
 
-      {/* COVER */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <ImageIcon className="h-5 w-5" />
-            </div>
+      {/* ===================================================
+          COVER
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <ImageIcon className="h-5 w-5" />
+          </div>
 
-            <div>
-              <h2 className="font-semibold">
-                Cover image
-              </h2>
+          <div>
+            <h2 className="font-semibold">
+              Cover image
+            </h2>
 
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Primary image used on product listings and the public product page.
-              </p>
-            </div>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Main product image used across Embernix.
+            </p>
           </div>
         </div>
 
-        <div className="max-w-4xl p-6">
+        <div className="mt-6">
           <ProductCoverUploader
-            productId={
-              product.id
-            }
-            productName={
-              product.name ??
-              "Product"
-            }
+            productId={product.id}
             initialImageUrl={
               product.image_url
             }
@@ -287,52 +352,58 @@ export default function ProductForm({
         </div>
       </section>
 
-      {/* DESCRIPTION */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <h2 className="font-semibold">
-            Full description
-          </h2>
+      {/* ===================================================
+          DESCRIPTION
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <FileArchive className="h-5 w-5" />
+          </div>
 
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Build the full public product description with headings, lists,
-            links, and inline images.
-          </p>
+          <div>
+            <h2 className="font-semibold">
+              Full description
+            </h2>
+
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Rich content shown on the public product page.
+            </p>
+          </div>
         </div>
 
-        <div className="p-6">
+        <div className="mt-6">
           <ProductRichTextEditor
-            productId={
-              product.id
-            }
-            initialContent={
-              product.description
+            productId={product.id}
+            initialValue={
+              product.description ??
+              ""
             }
           />
         </div>
       </section>
 
-      {/* FEATURES */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <ListChecks className="h-5 w-5" />
-            </div>
+      {/* ===================================================
+          FEATURES
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <ListChecks className="h-5 w-5" />
+          </div>
 
-            <div>
-              <h2 className="font-semibold">
-                Features
-              </h2>
+          <div>
+            <h2 className="font-semibold">
+              Features
+            </h2>
 
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Highlight the main capabilities and selling points of this product.
-              </p>
-            </div>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Highlight what customers get with this product.
+            </p>
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="mt-6">
           <ProductFeaturesEditor
             initialFeatures={
               features
@@ -341,31 +412,29 @@ export default function ProductForm({
         </div>
       </section>
 
-      {/* GALLERY */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <Images className="h-5 w-5" />
-            </div>
+      {/* ===================================================
+          GALLERY
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <Images className="h-5 w-5" />
+          </div>
 
-            <div>
-              <h2 className="font-semibold">
-                Gallery
-              </h2>
+          <div>
+            <h2 className="font-semibold">
+              Gallery
+            </h2>
 
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Screenshots and product images shown on the public product page.
-              </p>
-            </div>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Screenshots and visual previews for the public product page.
+            </p>
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="mt-6">
           <ProductGalleryUploader
-            productId={
-              product.id
-            }
+            productId={product.id}
             initialImages={
               gallery
             }
@@ -373,32 +442,29 @@ export default function ProductForm({
         </div>
       </section>
 
-      {/* PRODUCT FILE */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <Package className="h-5 w-5" />
-            </div>
+      {/* ===================================================
+          PRODUCT FILE
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <FileArchive className="h-5 w-5" />
+          </div>
 
-            <div>
-              <h2 className="font-semibold">
-                Product file
-              </h2>
+          <div>
+            <h2 className="font-semibold">
+              Private product file
+            </h2>
 
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Private downloadable resource delivered only to customers
-                who own this product.
-              </p>
-            </div>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              File customers receive after purchase.
+            </p>
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="mt-6">
           <ProductFileUploader
-            productId={
-              product.id
-            }
+            productId={product.id}
             existingFile={
               productFile
             }
@@ -406,70 +472,72 @@ export default function ProductForm({
         </div>
       </section>
 
-      {/* RELEASES */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <History className="h-5 w-5" />
-            </div>
+      {/* ===================================================
+          RELEASES
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <History className="h-5 w-5" />
+          </div>
 
-            <div>
-              <h2 className="font-semibold">
-                Releases & version history
-              </h2>
+          <div>
+            <h2 className="font-semibold">
+              Releases & version history
+            </h2>
 
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Manage changelogs and choose the current product release.
-              </p>
-            </div>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Manage versions and choose the current release.
+            </p>
           </div>
         </div>
 
-        <div className="p-6">
+        {product.version && (
+          <div className="mt-5 rounded-xl bg-[var(--surface-secondary)] px-4 py-3">
+            <p className="text-xs text-[var(--muted)]">
+              Currently saved product version
+            </p>
+
+            <p className="mt-1 text-sm font-semibold">
+              v{product.version}
+            </p>
+          </div>
+        )}
+
+        <div className="mt-6">
           <ProductVersionsEditor
             initialVersions={
               versions
             }
           />
-
-          {product.version && (
-            <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-secondary)] px-4 py-3">
-              <p className="text-xs text-[var(--muted)]">
-                Currently saved product version
-              </p>
-
-              <p className="mt-1 text-sm font-semibold">
-                {product.version}
-              </p>
-            </div>
-          )}
         </div>
       </section>
 
-      {/* LINKS */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <div className="flex items-center gap-3">
-            <ExternalLink className="h-5 w-5 text-[var(--primary)]" />
+      {/* ===================================================
+          LINKS
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <Link2 className="h-5 w-5" />
+          </div>
 
-            <div>
-              <h2 className="font-semibold">
-                Product links
-              </h2>
+          <div>
+            <h2 className="font-semibold">
+              Links
+            </h2>
 
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Optional demo and documentation links.
-              </p>
-            </div>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Optional demo and documentation links.
+            </p>
           </div>
         </div>
 
-        <div className="grid gap-5 p-6 md:grid-cols-2">
+        <div className="mt-6 grid gap-5 md:grid-cols-2">
           <div>
             <label
               htmlFor="demoUrl"
-              className="mb-2 block text-sm font-medium"
+              className={labelClass}
             >
               Demo URL
             </label>
@@ -482,15 +550,15 @@ export default function ProductForm({
                 product.demo_url ??
                 ""
               }
-              placeholder="https://..."
-              className="h-11 w-full rounded-xl border border-[var(--border)] px-4 text-sm focus:border-[var(--primary)]"
+              placeholder="https://demo.example.com"
+              className={inputClass}
             />
           </div>
 
           <div>
             <label
               htmlFor="documentationUrl"
-              className="mb-2 block text-sm font-medium"
+              className={labelClass}
             >
               Documentation URL
             </label>
@@ -503,36 +571,99 @@ export default function ProductForm({
                 product.documentation_url ??
                 ""
               }
-              placeholder="https://..."
-              className="h-11 w-full rounded-xl border border-[var(--border)] px-4 text-sm focus:border-[var(--primary)]"
+              placeholder="https://docs.example.com"
+              className={inputClass}
             />
           </div>
         </div>
       </section>
 
-      {/* SEO */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] p-6">
-          <div className="flex items-center gap-3">
-            <Search className="h-5 w-5 text-[var(--primary)]" />
+      {/* ===================================================
+          PADDLE
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+              <ShoppingBag className="h-5 w-5" />
+            </div>
 
             <div>
               <h2 className="font-semibold">
-                SEO
+                Paddle
               </h2>
 
               <p className="mt-1 text-sm text-[var(--muted)]">
-                Search metadata for the public product page.
+                Paddle catalog product and pricing are synchronized automatically.
               </p>
+            </div>
+          </div>
+
+          {paddleConnected ? (
+            <span className="shrink-0 rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+              Connected
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+              Not connected
+            </span>
+          )}
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium text-[var(--muted)]">
+              Paddle Product ID
+            </p>
+
+            <div className="mt-2 min-h-11 break-all rounded-xl bg-[var(--surface-secondary)] px-4 py-3 text-sm">
+              {product.paddle_product_id ??
+                "Created automatically when saved"}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-[var(--muted)]">
+              Paddle Price ID
+            </p>
+
+            <div className="mt-2 min-h-11 break-all rounded-xl bg-[var(--surface-secondary)] px-4 py-3 text-sm">
+              {product.paddle_price_id ??
+                "Created automatically when saved"}
             </div>
           </div>
         </div>
 
-        <div className="grid gap-5 p-6">
+        <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
+          Changing the product price automatically creates a new Paddle price and switches Embernix to it.
+        </p>
+      </section>
+
+      {/* ===================================================
+          SEO
+      =================================================== */}
+      <section className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <Search className="h-5 w-5" />
+          </div>
+
+          <div>
+            <h2 className="font-semibold">
+              SEO
+            </h2>
+
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Optional search metadata for the public product page.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 space-y-5">
           <div>
             <label
               htmlFor="seoTitle"
-              className="mb-2 block text-sm font-medium"
+              className={labelClass}
             >
               SEO title
             </label>
@@ -544,18 +675,15 @@ export default function ProductForm({
                 product.seo_title ??
                 ""
               }
-              placeholder={
-                product.name ??
-                "Product SEO title"
-              }
-              className="h-11 w-full rounded-xl border border-[var(--border)] px-4 text-sm focus:border-[var(--primary)]"
+              className={inputClass}
+              placeholder={product.name}
             />
           </div>
 
           <div>
             <label
               htmlFor="seoDescription"
-              className="mb-2 block text-sm font-medium"
+              className={labelClass}
             >
               SEO description
             </label>
@@ -563,36 +691,46 @@ export default function ProductForm({
             <textarea
               id="seoDescription"
               name="seoDescription"
-              maxLength={160}
-              rows={3}
               defaultValue={
                 product.seo_description ??
                 ""
               }
-              className="w-full resize-none rounded-xl border border-[var(--border)] px-4 py-3 text-sm focus:border-[var(--primary)]"
+              rows={3}
+              className={textareaClass}
+              placeholder="Search description for this product."
             />
-
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Maximum 160 characters.
-            </p>
           </div>
         </div>
       </section>
 
-      {/* FINAL ACTIONS */}
-      <div className="flex items-center justify-end gap-3 pb-8 pt-2">
+      {/* ===================================================
+          ACTIONS
+      =================================================== */}
+      <div className="flex flex-wrap items-center justify-end gap-3 pb-8">
         <Link
           href="/admin/products"
-          className="inline-flex h-11 items-center justify-center rounded-xl border border-[var(--border)] px-5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+          className="inline-flex h-11 items-center justify-center rounded-xl border border-[var(--border)] bg-white px-5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
         >
           Cancel
         </Link>
 
+        {isEdit && product.slug && (
+          <a
+            href={`https://embernix.org/products/${product.slug}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+          >
+            View product
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        )}
+
         <button
           type="submit"
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--primary)] px-6 text-sm font-medium text-white transition-colors hover:bg-[var(--primary-hover)]"
+          className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--primary)] px-6 text-sm font-semibold text-white transition-colors hover:bg-[var(--primary-hover)]"
         >
-          {isCreate
+          {mode === "create"
             ? "Create product"
             : "Save changes"}
         </button>

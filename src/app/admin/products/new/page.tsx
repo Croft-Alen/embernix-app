@@ -76,18 +76,13 @@ export default async function NewProductPage({
 
       <ProductForm
         mode="create"
-        action={
-          createProduct
-        }
-        productFile={
-          null
-        }
+        action={createProduct}
+        productFile={null}
         features={[]}
         gallery={[]}
         versions={[]}
         product={{
-          id:
-            productId,
+          id: productId,
 
           name: "",
 
@@ -99,32 +94,35 @@ export default async function NewProductPage({
           description:
             "",
 
-          price_cents:
-            0,
+          price_cents: 0,
 
-          currency:
-            "USD",
+          currency: "USD",
 
-          version:
-            null,
+          version: null,
 
-          image_url:
-            "",
+          image_url: "",
 
-          seo_title:
-            "",
+          seo_title: "",
 
           seo_description:
             "",
 
-          demo_url:
-            "",
+          demo_url: "",
 
           documentation_url:
             "",
 
-          active:
-            true,
+          active: true,
+
+          /*
+           * Automatically created
+           * after product save.
+           */
+          paddle_product_id:
+            null,
+
+          paddle_price_id:
+            null,
         }}
       />
     </div>

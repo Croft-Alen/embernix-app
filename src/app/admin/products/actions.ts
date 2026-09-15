@@ -1,62 +1,79 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { randomUUID } from "crypto";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  redirect,
+} from "next/navigation";
 
-const MAX_PRODUCT_FILE_SIZE =
-  50 * 1024 * 1024;
+import {
+  revalidatePath,
+} from "next/cache";
+
+import {
+  createClient,
+} from "@/lib/supabase/server";
+
+import {
+  createAdminClient,
+} from "@/lib/supabase/admin";
+
+import {
+  syncProductToPaddle,
+} from "@/lib/paddle/catalog";
+
+/* =========================================================
+   TYPES
+========================================================= */
 
 type FeaturePayload = {
-  id?: string | null;
-  title?: string;
-  description?: string;
-  sort_order?: number;
+  id?: string;
+  title: string;
+  description: string;
+  sort_order: number;
 };
 
 type GalleryPayload = {
-  id?: string | null;
-  image_url?: string;
-  alt_text?: string;
-  sort_order?: number;
+  id?: string;
+  image_url: string;
+  alt_text: string;
+  sort_order: number;
   storage_path?: string | null;
   is_new?: boolean;
 };
 
 type VersionPayload = {
-  id?: string | null;
-  version?: string;
-  release_notes?: string;
-  is_current?: boolean;
-  released_at?: string;
+  id?: string;
+  version: string;
+  release_notes: string;
+  is_current: boolean;
+  released_at: string;
 };
 
-async function requireAdmin() {
-  const supabase =
-    await createClient();
+type ProductFileInput = {
+  changed: boolean;
+  remove: boolean;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  storagePath:
+    | string
+    | null;
 
-  if (!user) {
-    redirect("/login");
-  }
+  fileName:
+    | string
+    | null;
 
-  const { data: admin } =
-    await supabase
-      .from("admin_users")
-      .select("user_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
+  fileSize:
+    | number
+    | null;
 
-  if (!admin) {
-    redirect("/dashboard");
-  }
+  mimeType:
+    | string
+    | null;
+};
 
-  return supabase;
-}
+/* =========================================================
+   BASIC HELPERS
+========================================================= */
 
 function cleanString(
   value:
@@ -68,6 +85,18 @@ function cleanString(
   ).trim();
 }
 
+function nullableString(
+  value:
+    | FormDataEntryValue
+    | null
+) {
+  const cleaned =
+    cleanString(value);
+
+  return cleaned ||
+    null;
+}
+
 function isUuid(
   value: string
 ) {
@@ -76,67 +105,138 @@ function isUuid(
   );
 }
 
-function redirectError(
-  path: string,
-  message: string
-): never {
-  const separator =
-    path.includes("?")
-      ? "&"
-      : "?";
+function parseBoolean(
+  value:
+    | FormDataEntryValue
+    | null
+) {
+  const cleaned =
+    cleanString(value);
 
-  redirect(
-    `${path}${separator}error=${encodeURIComponent(
-      message
-    )}`
+  return (
+    cleaned === "true" ||
+    cleaned === "1" ||
+    cleaned === "on"
   );
 }
 
-function parseJsonArray<T>(
-  formData: FormData,
-  field: string,
-  errorPath: string
-): T[] {
-  const raw =
-    cleanString(
-      formData.get(field)
+function parseInteger(
+  value:
+    | FormDataEntryValue
+    | null,
+  fallback = 0
+) {
+  const parsed =
+    Number.parseInt(
+      cleanString(value),
+      10
     );
 
-  if (!raw) {
+  if (
+    Number.isNaN(parsed)
+  ) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function parseJsonArray<T>(
+  raw:
+    | FormDataEntryValue
+    | null
+): T[] {
+  const value =
+    cleanString(raw);
+
+  if (!value) {
     return [];
   }
 
   try {
     const parsed =
-      JSON.parse(raw);
+      JSON.parse(value);
 
-    if (
-      !Array.isArray(parsed)
-    ) {
-      redirectError(
-        errorPath,
-        `Invalid ${field} data.`
-      );
-    }
-
-    return parsed as T[];
+    return Array.isArray(
+      parsed
+    )
+      ? parsed
+      : [];
   } catch {
-    redirectError(
-      errorPath,
-      `Invalid ${field} data.`
-    );
+    return [];
   }
 }
 
+function redirectError(
+  path: string,
+  message: string
+): never {
+  const url =
+    new URL(
+      path,
+      "https://embernix.local"
+    );
+
+  url.searchParams.set(
+    "error",
+    message
+  );
+
+  redirect(
+    `${url.pathname}${url.search}`
+  );
+}
+
+/* =========================================================
+   ADMIN AUTH
+========================================================= */
+
+async function requireAdmin() {
+  const supabase =
+    await createClient();
+
+  const {
+    data: { user },
+  } =
+    await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const {
+    data: adminUser,
+  } = await supabase
+    .from("admin_users")
+    .select("user_id")
+    .eq(
+      "user_id",
+      user.id
+    )
+    .maybeSingle();
+
+  if (!adminUser) {
+    redirect("/dashboard");
+  }
+
+  return {
+    supabase,
+    user,
+  };
+}
+
+/* =========================================================
+   FEATURES
+========================================================= */
+
 function getFeatures(
-  formData: FormData,
-  errorPath: string
+  formData: FormData
 ) {
   const raw =
     parseJsonArray<FeaturePayload>(
-      formData,
-      "featuresJson",
-      errorPath
+      formData.get(
+        "featuresJson"
+      )
     );
 
   return raw
@@ -145,547 +245,57 @@ function getFeatures(
         feature,
         index
       ) => ({
-        title: String(
-          feature.title ?? ""
-        ).trim(),
+        id:
+          feature.id &&
+          isUuid(
+            feature.id
+          )
+            ? feature.id
+            : undefined,
 
-        description: String(
-          feature.description ??
-            ""
-        ).trim(),
-
-        sort_order: index,
-      })
-    )
-    .filter((feature) => {
-      if (
-        !feature.title &&
-        !feature.description
-      ) {
-        return false;
-      }
-
-      if (!feature.title) {
-        redirectError(
-          errorPath,
-          "Every product feature must have a title."
-        );
-      }
-
-      return true;
-    });
-}
-
-function getGallery(
-  productId: string,
-  formData: FormData,
-  errorPath: string
-) {
-  const raw =
-    parseJsonArray<GalleryPayload>(
-      formData,
-      "galleryJson",
-      errorPath
-    );
-
-  return raw
-    .map(
-      (
-        image,
-        index
-      ) => ({
-        image_url: String(
-          image.image_url ?? ""
-        ).trim(),
-
-        alt_text:
+        title:
           String(
-            image.alt_text ?? ""
-          ).trim() || null,
-
-        sort_order: index,
-
-        storage_path:
-          String(
-            image.storage_path ??
+            feature.title ??
               ""
-          ).trim() || null,
+          ).trim(),
+
+        description:
+          String(
+            feature.description ??
+              ""
+          ).trim(),
+
+        sort_order:
+          Number.isFinite(
+            Number(
+              feature.sort_order
+            )
+          )
+            ? Number(
+                feature.sort_order
+              )
+            : index,
       })
     )
     .filter(
-      (image) =>
-        Boolean(
-          image.image_url
-        )
-    )
-    .map((image) => {
-      if (
-        image.storage_path &&
-        !image.storage_path.startsWith(
-          `${productId}/gallery/`
-        )
-      ) {
-        redirectError(
-          errorPath,
-          "Invalid gallery image path."
-        );
-      }
-
-      return image;
-    });
+      (feature) =>
+        feature.title.length >
+        0
+    );
 }
-
-function getVersions(
-  formData: FormData,
-  errorPath: string
-) {
-  const raw =
-    parseJsonArray<VersionPayload>(
-      formData,
-      "versionsJson",
-      errorPath
-    );
-
-  const versions = raw
-    .map((release) => {
-      const version =
-        String(
-          release.version ?? ""
-        ).trim();
-
-      const releaseNotes =
-        String(
-          release.release_notes ??
-            ""
-        ).trim();
-
-      const releasedAt =
-        String(
-          release.released_at ??
-            ""
-        ).trim();
-
-      return {
-        version,
-
-        release_notes:
-          releaseNotes || null,
-
-        is_current:
-          Boolean(
-            release.is_current
-          ),
-
-        released_at:
-          releasedAt ||
-          new Date().toISOString(),
-      };
-    })
-    .filter((release) => {
-      const hasAnyContent =
-        Boolean(
-          release.version ||
-            release.release_notes
-        );
-
-      if (!hasAnyContent) {
-        return false;
-      }
-
-      if (!release.version) {
-        redirectError(
-          errorPath,
-          "Every release must have a version number."
-        );
-      }
-
-      return true;
-    });
-
-  const normalized =
-    versions.map(
-      (release) =>
-        release.version.toLowerCase()
-    );
-
-  const unique =
-    new Set(normalized);
-
-  if (
-    unique.size !==
-    normalized.length
-  ) {
-    redirectError(
-      errorPath,
-      "Each release version must be unique."
-    );
-  }
-
-  const currentCount =
-    versions.filter(
-      (release) =>
-        release.is_current
-    ).length;
-
-  if (currentCount > 1) {
-    redirectError(
-      errorPath,
-      "Only one release can be marked as current."
-    );
-  }
-
-  /*
-   * If releases exist but none is marked current,
-   * automatically make the first one current.
-   */
-  if (
-    versions.length > 0 &&
-    currentCount === 0
-  ) {
-    versions[0].is_current =
-      true;
-  }
-
-  for (const release of versions) {
-    const date =
-      new Date(
-        release.released_at
-      );
-
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      redirectError(
-        errorPath,
-        `Invalid release date for version ${release.version}.`
-      );
-    }
-  }
-
-  return versions;
-}
-
-function getCurrentVersion(
-  versions: ReturnType<
-    typeof getVersions
-  >
-) {
-  return (
-    versions.find(
-      (release) =>
-        release.is_current
-    )?.version ?? null
-  );
-}
-
-function validateProduct(
-  productId: string,
-  formData: FormData,
-  errorPath: string,
-  currentVersion: string | null
-) {
-  const name =
-    cleanString(
-      formData.get("name")
-    );
-
-  const slug =
-    cleanString(
-      formData.get("slug")
-    ).toLowerCase();
-
-  const shortDescription =
-    cleanString(
-      formData.get(
-        "shortDescription"
-      )
-    );
-
-  const description =
-    cleanString(
-      formData.get(
-        "description"
-      )
-    );
-
-  const imageUrl =
-    cleanString(
-      formData.get(
-        "imageUrl"
-      )
-    );
-
-  const seoTitle =
-    cleanString(
-      formData.get(
-        "seoTitle"
-      )
-    );
-
-  const seoDescription =
-    cleanString(
-      formData.get(
-        "seoDescription"
-      )
-    );
-
-  const demoUrl =
-    cleanString(
-      formData.get(
-        "demoUrl"
-      )
-    );
-
-  const documentationUrl =
-    cleanString(
-      formData.get(
-        "documentationUrl"
-      )
-    );
-
-  const currency =
-    cleanString(
-      formData.get(
-        "currency"
-      )
-    ).toUpperCase() ||
-    "USD";
-
-  const price =
-    Number(
-      cleanString(
-        formData.get("price")
-      )
-    );
-
-  const active =
-    formData.get(
-      "active"
-    ) === "on";
-
-  if (
-    !productId ||
-    !isUuid(productId)
-  ) {
-    redirectError(
-      errorPath,
-      "Invalid product ID."
-    );
-  }
-
-  if (!name) {
-    redirectError(
-      errorPath,
-      "Product name is required."
-    );
-  }
-
-  if (!slug) {
-    redirectError(
-      errorPath,
-      "Product slug is required."
-    );
-  }
-
-  if (
-    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(
-      slug
-    )
-  ) {
-    redirectError(
-      errorPath,
-      "Slug can only contain lowercase letters, numbers, and hyphens."
-    );
-  }
-
-  if (
-    !Number.isFinite(
-      price
-    ) ||
-    price < 0
-  ) {
-    redirectError(
-      errorPath,
-      "Enter a valid product price."
-    );
-  }
-
-  if (
-    seoDescription.length >
-    160
-  ) {
-    redirectError(
-      errorPath,
-      "SEO description must be 160 characters or less."
-    );
-  }
-
-  return {
-    id: productId,
-    name,
-    slug,
-
-    short_description:
-      shortDescription ||
-      null,
-
-    description:
-      description || null,
-
-    price_cents:
-      Math.round(
-        price * 100
-      ),
-
-    currency,
-
-    /*
-     * products.version is now controlled
-     * by the release marked as current.
-     */
-    version:
-      currentVersion,
-
-    image_url:
-      imageUrl || null,
-
-    seo_title:
-      seoTitle || null,
-
-    seo_description:
-      seoDescription ||
-      null,
-
-    demo_url:
-      demoUrl || null,
-
-    documentation_url:
-      documentationUrl ||
-      null,
-
-    active,
-  };
-}
-
-function getProductFileInput(
-  productId: string,
-  formData: FormData,
-  errorPath: string
-) {
-  const path =
-    cleanString(
-      formData.get(
-        "productFilePath"
-      )
-    );
-
-  const name =
-    cleanString(
-      formData.get(
-        "productFileName"
-      )
-    );
-
-  const mime =
-    cleanString(
-      formData.get(
-        "productFileMime"
-      )
-    );
-
-  const size =
-    Number(
-      cleanString(
-        formData.get(
-          "productFileSize"
-        )
-      ) || "0"
-    );
-
-  const changed =
-    cleanString(
-      formData.get(
-        "productFileChanged"
-      )
-    ) === "true";
-
-  const remove =
-    cleanString(
-      formData.get(
-        "productFileRemove"
-      )
-    ) === "true";
-
-  if (
-    path &&
-    !path.startsWith(
-      `${productId}/`
-    )
-  ) {
-    redirectError(
-      errorPath,
-      "Invalid product file path."
-    );
-  }
-
-  if (
-    path &&
-    (!name ||
-      !Number.isFinite(
-        size
-      ) ||
-      size <= 0)
-  ) {
-    redirectError(
-      errorPath,
-      "Invalid product file information."
-    );
-  }
-
-  if (
-    size >
-    MAX_PRODUCT_FILE_SIZE
-  ) {
-    redirectError(
-      errorPath,
-      "Product file must be smaller than 50 MB."
-    );
-  }
-
-  return {
-    path,
-    name,
-
-    mime:
-      mime ||
-      "application/octet-stream",
-
-    size,
-    changed,
-    remove,
-  };
-}
-
-type SupabaseClient =
-  Awaited<
-    ReturnType<
-      typeof createClient
-    >
-  >;
 
 async function syncFeatures(
-  supabase: SupabaseClient,
   productId: string,
   features: ReturnType<
     typeof getFeatures
   >
 ) {
+  const admin =
+    createAdminClient();
+
   const {
-    data: existing,
-    error: readError,
-  } = await supabase
+    data: backup,
+  } = await admin
     .from(
       "product_features"
     )
@@ -697,25 +307,19 @@ async function syncFeatures(
     .eq(
       "product_id",
       productId
-    )
-    .order(
-      "sort_order"
     );
 
-  if (readError) {
-    throw readError;
-  }
-
-  const { error: deleteError } =
-    await supabase
-      .from(
-        "product_features"
-      )
-      .delete()
-      .eq(
-        "product_id",
-        productId
-      );
+  const {
+    error: deleteError,
+  } = await admin
+    .from(
+      "product_features"
+    )
+    .delete()
+    .eq(
+      "product_id",
+      productId
+    );
 
   if (deleteError) {
     throw deleteError;
@@ -729,13 +333,16 @@ async function syncFeatures(
 
   const {
     error: insertError,
-  } = await supabase
+  } = await admin
     .from(
       "product_features"
     )
     .insert(
       features.map(
-        (feature) => ({
+        (
+          feature,
+          index
+        ) => ({
           product_id:
             productId,
 
@@ -747,56 +354,126 @@ async function syncFeatures(
             null,
 
           sort_order:
-            feature.sort_order,
+            index,
         })
       )
     );
 
-  if (!insertError) {
-    return;
-  }
-
-  if (
-    existing &&
-    existing.length > 0
-  ) {
-    await supabase
-      .from(
-        "product_features"
-      )
-      .insert(
-        existing.map(
-          (feature) => ({
-            product_id:
-              productId,
-
-            title:
-              feature.title,
-
-            description:
-              feature.description,
-
-            sort_order:
-              feature.sort_order,
-          })
+  if (insertError) {
+    if (
+      backup &&
+      backup.length > 0
+    ) {
+      await admin
+        .from(
+          "product_features"
         )
-      );
-  }
+        .insert(
+          backup.map(
+            (feature) => ({
+              product_id:
+                productId,
 
-  throw insertError;
+              title:
+                feature.title,
+
+              description:
+                feature.description,
+
+              sort_order:
+                feature.sort_order,
+            })
+          )
+        );
+    }
+
+    throw insertError;
+  }
+}
+
+/* =========================================================
+   GALLERY
+========================================================= */
+
+function getGallery(
+  formData: FormData
+) {
+  const raw =
+    parseJsonArray<GalleryPayload>(
+      formData.get(
+        "galleryJson"
+      )
+    );
+
+  return raw
+    .map(
+      (
+        image,
+        index
+      ) => ({
+        id:
+          image.id &&
+          isUuid(image.id)
+            ? image.id
+            : undefined,
+
+        image_url:
+          String(
+            image.image_url ??
+              ""
+          ).trim(),
+
+        alt_text:
+          String(
+            image.alt_text ??
+              ""
+          ).trim(),
+
+        sort_order:
+          Number.isFinite(
+            Number(
+              image.sort_order
+            )
+          )
+            ? Number(
+                image.sort_order
+              )
+            : index,
+
+        storage_path:
+          image.storage_path
+            ? String(
+                image.storage_path
+              ).trim()
+            : null,
+
+        is_new:
+          Boolean(
+            image.is_new
+          ),
+      })
+    )
+    .filter(
+      (image) =>
+        image.image_url.length >
+        0
+    );
 }
 
 async function syncGallery(
-  supabase: SupabaseClient,
   productId: string,
   gallery: ReturnType<
     typeof getGallery
   >
 ) {
+  const admin =
+    createAdminClient();
+
   const {
     data: existing,
-    error: readError,
-  } = await supabase
+    error:
+      existingError,
+  } = await admin
     .from(
       "product_images"
     )
@@ -809,16 +486,28 @@ async function syncGallery(
     .eq(
       "product_id",
       productId
-    )
-    .order(
-      "sort_order"
     );
 
-  if (readError) {
-    throw readError;
+  if (existingError) {
+    throw existingError;
   }
 
-  const submittedPaths =
+  const oldPaths =
+    new Set(
+      (existing ?? [])
+        .map(
+          (image) =>
+            image.storage_path
+        )
+        .filter(
+          (
+            value
+          ): value is string =>
+            Boolean(value)
+        )
+    );
+
+  const newPaths =
     new Set(
       gallery
         .map(
@@ -827,31 +516,21 @@ async function syncGallery(
         )
         .filter(
           (
-            path
-          ): path is string =>
-            Boolean(path)
+            value
+          ): value is string =>
+            Boolean(value)
         )
     );
 
-  const pathsToRemove =
-    (existing ?? [])
-      .map(
-        (image) =>
-          image.storage_path
-      )
-      .filter(
-        (
-          path
-        ): path is string =>
-          Boolean(path) &&
-          !submittedPaths.has(
-            path
-          )
-      );
+  const removedPaths =
+    [...oldPaths].filter(
+      (path) =>
+        !newPaths.has(path)
+    );
 
   const {
     error: deleteError,
-  } = await supabase
+  } = await admin
     .from(
       "product_images"
     )
@@ -870,13 +549,16 @@ async function syncGallery(
   ) {
     const {
       error: insertError,
-    } = await supabase
+    } = await admin
       .from(
         "product_images"
       )
       .insert(
         gallery.map(
-          (image) => ({
+          (
+            image,
+            index
+          ) => ({
             product_id:
               productId,
 
@@ -884,29 +566,38 @@ async function syncGallery(
               image.image_url,
 
             alt_text:
-              image.alt_text,
+              image.alt_text ||
+              null,
 
             sort_order:
-              image.sort_order,
+              index,
 
             storage_path:
-              image.storage_path,
+              image.storage_path ||
+              null,
           })
         )
       );
 
     if (insertError) {
+      /*
+       * Restore database
+       * snapshot if possible.
+       */
       if (
         existing &&
-        existing.length > 0
+        existing.length >
+          0
       ) {
-        await supabase
+        await admin
           .from(
             "product_images"
           )
           .insert(
             existing.map(
-              (image) => ({
+              (
+                image
+              ) => ({
                 product_id:
                   productId,
 
@@ -930,41 +621,190 @@ async function syncGallery(
     }
   }
 
+  /*
+   * DB is synced successfully.
+   * Now remove obsolete files.
+   */
   if (
-    pathsToRemove.length >
+    removedPaths.length >
     0
   ) {
     const {
       error:
-        storageDeleteError,
-    } = await supabase.storage
-      .from("product-media")
+        storageError,
+    } = await admin.storage
+      .from(
+        "product-media"
+      )
       .remove(
-        pathsToRemove
+        removedPaths
       );
 
-    if (
-      storageDeleteError
-    ) {
+    if (storageError) {
       console.error(
-        "Failed to remove old gallery images:",
-        storageDeleteError
+        "Failed to clean removed gallery images:",
+        storageError
       );
     }
   }
 }
 
+/* =========================================================
+   VERSIONS
+========================================================= */
+
+function getVersions(
+  formData: FormData
+) {
+  const raw =
+    parseJsonArray<VersionPayload>(
+      formData.get(
+        "versionsJson"
+      )
+    );
+
+  const versions =
+    raw
+      .map(
+        (
+          release,
+          index
+        ) => ({
+          id:
+            release.id &&
+            isUuid(
+              release.id
+            )
+              ? release.id
+              : undefined,
+
+          version:
+            String(
+              release.version ??
+                ""
+            ).trim(),
+
+          release_notes:
+            String(
+              release.release_notes ??
+                ""
+            ).trim(),
+
+          is_current:
+            Boolean(
+              release.is_current
+            ),
+
+          released_at:
+            String(
+              release.released_at ??
+                ""
+            ).trim(),
+
+          sort_order:
+            index,
+        })
+      )
+      .filter(
+        (release) =>
+          release.version.length >
+          0
+      );
+
+  const seen =
+    new Set<string>();
+
+  for (
+    const release of
+    versions
+  ) {
+    const normalized =
+      release.version.toLowerCase();
+
+    if (
+      seen.has(normalized)
+    ) {
+      throw new Error(
+        `Duplicate version: ${release.version}`
+      );
+    }
+
+    seen.add(normalized);
+
+    if (
+      release.released_at
+    ) {
+      const parsed =
+        new Date(
+          release.released_at
+        );
+
+      if (
+        Number.isNaN(
+          parsed.getTime()
+        )
+      ) {
+        throw new Error(
+          `Invalid release date for version ${release.version}`
+        );
+      }
+    }
+  }
+
+  const currentVersions =
+    versions.filter(
+      (release) =>
+        release.is_current
+    );
+
+  if (
+    currentVersions.length >
+    1
+  ) {
+    throw new Error(
+      "Only one release can be marked as current."
+    );
+  }
+
+  if (
+    versions.length > 0 &&
+    currentVersions.length ===
+      0
+  ) {
+    versions[0].is_current =
+      true;
+  }
+
+  return versions;
+}
+
+function getCurrentVersion(
+  versions: ReturnType<
+    typeof getVersions
+  >
+) {
+  return (
+    versions.find(
+      (release) =>
+        release.is_current
+    )?.version ??
+    versions[0]?.version ??
+    null
+  );
+}
+
 async function syncVersions(
-  supabase: SupabaseClient,
   productId: string,
   versions: ReturnType<
     typeof getVersions
   >
 ) {
+  const admin =
+    createAdminClient();
+
   const {
-    data: existing,
-    error: readError,
-  } = await supabase
+    data: backup,
+  } = await admin
     .from(
       "product_versions"
     )
@@ -979,13 +819,9 @@ async function syncVersions(
       productId
     );
 
-  if (readError) {
-    throw readError;
-  }
-
   const {
     error: deleteError,
-  } = await supabase
+  } = await admin
     .from(
       "product_versions"
     )
@@ -1007,7 +843,7 @@ async function syncVersions(
 
   const {
     error: insertError,
-  } = await supabase
+  } = await admin
     .from(
       "product_versions"
     )
@@ -1021,72 +857,141 @@ async function syncVersions(
             release.version,
 
           release_notes:
-            release.release_notes,
+            release.release_notes ||
+            null,
 
           is_current:
             release.is_current,
 
           released_at:
-            release.released_at,
+            release.released_at
+              ? new Date(
+                  release.released_at
+                ).toISOString()
+              : new Date().toISOString(),
         })
       )
     );
 
-  if (!insertError) {
-    return;
-  }
-
-  /*
-   * Restore old release history if
-   * replacement fails.
-   */
-  if (
-    existing &&
-    existing.length > 0
-  ) {
-    await supabase
-      .from(
-        "product_versions"
-      )
-      .insert(
-        existing.map(
-          (release) => ({
-            product_id:
-              productId,
-
-            version:
-              release.version,
-
-            release_notes:
-              release.release_notes,
-
-            is_current:
-              release.is_current,
-
-            released_at:
-              release.released_at,
-          })
+  if (insertError) {
+    if (
+      backup &&
+      backup.length > 0
+    ) {
+      await admin
+        .from(
+          "product_versions"
         )
-      );
-  }
+        .insert(
+          backup.map(
+            (release) => ({
+              product_id:
+                productId,
 
-  throw insertError;
+              version:
+                release.version,
+
+              release_notes:
+                release.release_notes,
+
+              is_current:
+                release.is_current,
+
+              released_at:
+                release.released_at,
+            })
+          )
+        );
+    }
+
+    throw insertError;
+  }
+}
+
+/* =========================================================
+   PRIVATE PRODUCT FILE
+========================================================= */
+
+function getProductFileInput(
+  formData: FormData
+): ProductFileInput {
+  const changed =
+    parseBoolean(
+      formData.get(
+        "productFileChanged"
+      )
+    );
+
+  const remove =
+    parseBoolean(
+      formData.get(
+        "productFileRemove"
+      )
+    );
+
+  const rawSize =
+    cleanString(
+      formData.get(
+        "productFileSize"
+      )
+    );
+
+  const parsedSize =
+    rawSize
+      ? Number(rawSize)
+      : null;
+
+  return {
+    changed,
+    remove,
+
+    storagePath:
+      nullableString(
+        formData.get(
+          "productFilePath"
+        )
+      ),
+
+    fileName:
+      nullableString(
+        formData.get(
+          "productFileName"
+        )
+      ),
+
+    fileSize:
+      parsedSize !==
+        null &&
+      Number.isFinite(
+        parsedSize
+      )
+        ? parsedSize
+        : null,
+
+    mimeType:
+      nullableString(
+        formData.get(
+          "productFileMime"
+        )
+      ),
+  };
 }
 
 async function syncPrimaryFile(
-  supabase: SupabaseClient,
   productId: string,
-  productFile: ReturnType<
-    typeof getProductFileInput
-  >
+  input: ProductFileInput
 ) {
+  if (!input.changed) {
+    return;
+  }
+
+  const admin =
+    createAdminClient();
+
   const {
-    data: existingFile,
-    error: readError,
-  } = await supabase
-    .from(
-      "product_files"
-    )
+    data: existing,
+  } = await admin
+    .from("product_files")
     .select(`
       id,
       storage_path
@@ -1101,173 +1006,415 @@ async function syncPrimaryFile(
     )
     .maybeSingle();
 
-  if (readError) {
-    throw readError;
-  }
-
-  if (
-    !productFile.changed
-  ) {
-    return;
-  }
-
-  if (
-    productFile.remove
-  ) {
-    if (!existingFile) {
-      return;
-    }
-
-    const { error } =
-      await supabase
+  /*
+   * REMOVE
+   */
+  if (input.remove) {
+    if (existing) {
+      const {
+        error:
+          deleteError,
+      } = await admin
         .from(
           "product_files"
         )
         .delete()
         .eq(
           "id",
-          existingFile.id
+          existing.id
         );
 
-    if (error) {
-      throw error;
-    }
+      if (deleteError) {
+        throw deleteError;
+      }
 
-    const {
-      error:
-        storageError,
-    } = await supabase.storage
-      .from(
-        "product-files"
-      )
-      .remove([
-        existingFile.storage_path,
-      ]);
-
-    if (storageError) {
-      console.error(
-        "Unable to remove old product file:",
-        storageError
-      );
-    }
-
-    return;
-  }
-
-  if (
-    !productFile.path
-  ) {
-    return;
-  }
-
-  if (existingFile) {
-    const { error } =
-      await supabase
-        .from(
-          "product_files"
-        )
-        .update({
-          file_name:
-            productFile.name,
-
-          storage_path:
-            productFile.path,
-
-          file_size:
-            productFile.size,
-
-          mime_type:
-            productFile.mime,
-        })
-        .eq(
-          "id",
-          existingFile.id
-        );
-
-    if (error) {
-      await supabase.storage
-        .from(
-          "product-files"
-        )
-        .remove([
-          productFile.path,
-        ]);
-
-      throw error;
-    }
-
-    if (
-      existingFile.storage_path !==
-      productFile.path
-    ) {
-      const {
-        error:
-          storageError,
-      } = await supabase.storage
-        .from(
-          "product-files"
-        )
-        .remove([
-          existingFile.storage_path,
-        ]);
-
-      if (storageError) {
-        console.error(
-          "Unable to remove replaced product file:",
-          storageError
-        );
+      if (
+        existing.storage_path
+      ) {
+        await admin.storage
+          .from(
+            "product-files"
+          )
+          .remove([
+            existing.storage_path,
+          ]);
       }
     }
 
     return;
   }
 
-  const { error } =
-    await supabase
-      .from(
-        "product_files"
-      )
+  /*
+   * REPLACE / CREATE
+   */
+  if (
+    !input.storagePath ||
+    !input.fileName
+  ) {
+    throw new Error(
+      "Uploaded product file information is incomplete."
+    );
+  }
+
+  const oldStoragePath =
+    existing?.storage_path ??
+    null;
+
+  if (existing) {
+    const {
+      error: updateError,
+    } = await admin
+      .from("product_files")
+      .update({
+        file_name:
+          input.fileName,
+
+        storage_path:
+          input.storagePath,
+
+        file_size:
+          input.fileSize,
+
+        mime_type:
+          input.mimeType,
+
+        version_id: null,
+
+        is_primary: true,
+      })
+      .eq(
+        "id",
+        existing.id
+      );
+
+    if (updateError) {
+      throw updateError;
+    }
+  } else {
+    const {
+      error: insertError,
+    } = await admin
+      .from("product_files")
       .insert({
         product_id:
           productId,
 
-        version_id:
-          null,
+        version_id: null,
 
         file_name:
-          productFile.name,
+          input.fileName,
 
         storage_path:
-          productFile.path,
+          input.storagePath,
 
         file_size:
-          productFile.size,
+          input.fileSize,
 
         mime_type:
-          productFile.mime,
+          input.mimeType,
 
-        is_primary:
-          true,
+        is_primary: true,
       });
 
-  if (error) {
-    await supabase.storage
-      .from(
-        "product-files"
-      )
-      .remove([
-        productFile.path,
-      ]);
+    if (insertError) {
+      throw insertError;
+    }
+  }
 
-    throw error;
+  /*
+   * New DB record succeeded.
+   * Now remove replaced object.
+   */
+  if (
+    oldStoragePath &&
+    oldStoragePath !==
+      input.storagePath
+  ) {
+    await admin.storage
+      .from("product-files")
+      .remove([
+        oldStoragePath,
+      ]);
   }
 }
+
+/* =========================================================
+   PRODUCT VALIDATION
+========================================================= */
+
+function validateProduct(
+  productId: string,
+  formData: FormData,
+  currentVersion:
+    | string
+    | null
+) {
+  const name =
+    cleanString(
+      formData.get("name")
+    );
+
+  const slug =
+    cleanString(
+      formData.get("slug")
+    )
+      .toLowerCase()
+      .replace(
+        /[^a-z0-9-]+/g,
+        "-"
+      )
+      .replace(
+        /^-+|-+$/g,
+        ""
+      );
+
+  const shortDescription =
+    nullableString(
+      formData.get(
+        "shortDescription"
+      )
+    );
+
+  const description =
+    nullableString(
+      formData.get(
+        "description"
+      )
+    );
+
+  const imageUrl =
+    nullableString(
+      formData.get(
+        "imageUrl"
+      )
+    );
+
+  const priceCents =
+    parseInteger(
+      formData.get(
+        "priceCents"
+      )
+    );
+
+  const currency =
+    cleanString(
+      formData.get(
+        "currency"
+      )
+    )
+      .toUpperCase();
+
+  const demoUrl =
+    nullableString(
+      formData.get(
+        "demoUrl"
+      )
+    );
+
+  const documentationUrl =
+    nullableString(
+      formData.get(
+        "documentationUrl"
+      )
+    );
+
+  const seoTitle =
+    nullableString(
+      formData.get(
+        "seoTitle"
+      )
+    );
+
+  const seoDescription =
+    nullableString(
+      formData.get(
+        "seoDescription"
+      )
+    );
+
+  const active =
+    parseBoolean(
+      formData.get(
+        "active"
+      )
+    );
+
+  if (!isUuid(productId)) {
+    throw new Error(
+      "Invalid product ID."
+    );
+  }
+
+  if (
+    name.length < 2
+  ) {
+    throw new Error(
+      "Product name is required."
+    );
+  }
+
+  if (!slug) {
+    throw new Error(
+      "Product slug is required."
+    );
+  }
+
+  if (
+    priceCents < 0
+  ) {
+    throw new Error(
+      "Product price cannot be negative."
+    );
+  }
+
+  if (
+    currency.length !==
+    3
+  ) {
+    throw new Error(
+      "Currency must be a 3-letter code."
+    );
+  }
+
+  return {
+    id: productId,
+
+    name,
+    slug,
+
+    short_description:
+      shortDescription,
+
+    description,
+
+    price_cents:
+      priceCents,
+
+    currency,
+
+    version:
+      currentVersion,
+
+    image_url:
+      imageUrl,
+
+    active,
+
+    demo_url:
+      demoUrl,
+
+    documentation_url:
+      documentationUrl,
+
+    seo_title:
+      seoTitle,
+
+    seo_description:
+      seoDescription,
+  };
+}
+
+/* =========================================================
+   PADDLE CATALOG SYNC
+========================================================= */
+
+async function syncSavedProductWithPaddle(
+  productId: string
+) {
+  const admin =
+    createAdminClient();
+
+  const {
+    data: product,
+    error,
+  } = await admin
+    .from("products")
+    .select(`
+      id,
+      name,
+      short_description,
+      image_url,
+      price_cents,
+      currency,
+      paddle_product_id,
+      paddle_price_id
+    `)
+    .eq(
+      "id",
+      productId
+    )
+    .maybeSingle();
+
+  if (
+    error ||
+    !product
+  ) {
+    throw new Error(
+      "Unable to load product for Paddle sync."
+    );
+  }
+
+  const result =
+    await syncProductToPaddle({
+      productId:
+        product.id,
+
+      name:
+        product.name,
+
+      shortDescription:
+        product.short_description,
+
+      imageUrl:
+        product.image_url,
+
+      priceCents:
+        product.price_cents,
+
+      currency:
+        product.currency,
+
+      paddleProductId:
+        product.paddle_product_id,
+
+      paddlePriceId:
+        product.paddle_price_id,
+    });
+
+  const {
+    error: updateError,
+  } = await admin
+    .from("products")
+    .update({
+      paddle_product_id:
+        result.paddleProductId,
+
+      paddle_price_id:
+        result.paddlePriceId,
+
+      updated_at:
+        new Date().toISOString(),
+    })
+    .eq(
+      "id",
+      productId
+    );
+
+  if (updateError) {
+    throw new Error(
+      "Paddle sync succeeded but Embernix could not save the Paddle IDs."
+    );
+  }
+}
+
+/* =========================================================
+   CREATE PRODUCT
+========================================================= */
 
 export async function createProduct(
   formData: FormData
 ) {
-  const supabase =
-    await requireAdmin();
+  await requireAdmin();
 
   const productId =
     cleanString(
@@ -1281,88 +1428,125 @@ export async function createProduct(
       productId
     )}`;
 
-  /*
-   * Parse releases first because
-   * products.version comes from
-   * the current release.
-   */
-  const versions =
-    getVersions(
-      formData,
-      errorPath
+  let versions: ReturnType<
+    typeof getVersions
+  >;
+
+  try {
+    versions =
+      getVersions(
+        formData
+      );
+  } catch (error) {
+    redirectError(
+      errorPath,
+      error instanceof Error
+        ? error.message
+        : "Invalid release information."
     );
+  }
 
   const currentVersion =
     getCurrentVersion(
       versions
     );
 
-  const product =
-    validateProduct(
-      productId,
-      formData,
+  let product:
+    | ReturnType<
+        typeof validateProduct
+      >
+    | undefined;
+
+  try {
+    product =
+      validateProduct(
+        productId,
+        formData,
+        currentVersion
+      );
+  } catch (error) {
+    redirectError(
       errorPath,
-      currentVersion
+      error instanceof Error
+        ? error.message
+        : "Invalid product information."
     );
+  }
 
   const features =
     getFeatures(
-      formData,
-      errorPath
+      formData
     );
 
   const gallery =
     getGallery(
-      productId,
-      formData,
-      errorPath
+      formData
     );
 
   const productFile =
     getProductFileInput(
-      productId,
-      formData,
-      errorPath
+      formData
     );
 
-  const { error } =
-    await supabase
-      .from("products")
-      .insert(product);
+  const admin =
+    createAdminClient();
 
-  if (error) {
+  const {
+    error: productError,
+  } = await admin
+    .from("products")
+    .insert({
+      ...product,
+
+      created_at:
+        new Date().toISOString(),
+
+      updated_at:
+        new Date().toISOString(),
+    });
+
+  if (productError) {
     redirectError(
       errorPath,
-      error.message
+      productError.code ===
+        "23505"
+        ? "A product with this slug already exists."
+        : "Unable to create product."
     );
   }
 
   try {
     await syncFeatures(
-      supabase,
       productId,
       features
     );
 
     await syncGallery(
-      supabase,
       productId,
       gallery
     );
 
     await syncVersions(
-      supabase,
       productId,
       versions
     );
 
     await syncPrimaryFile(
-      supabase,
       productId,
       productFile
     );
   } catch (error) {
-    await supabase
+    console.error(
+      "Product relation sync failed:",
+      error
+    );
+
+    /*
+     * Creation failed before completion.
+     * Remove product and related rows via
+     * FK cascades.
+     */
+    await admin
       .from("products")
       .delete()
       .eq(
@@ -1370,132 +1554,29 @@ export async function createProduct(
         productId
       );
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to save product data.";
-
     redirectError(
       errorPath,
-      message
+      error instanceof Error
+        ? error.message
+        : "Unable to finish creating product."
     );
   }
 
-  revalidatePath(
-    "/admin/products"
-  );
-
-  redirect(
-    `/admin/products/${productId}/edit?message=${encodeURIComponent(
-      "Product created successfully."
-    )}`
-  );
-}
-
-export async function updateProduct(
-  productId: string,
-  formData: FormData
-) {
-  const supabase =
-    await requireAdmin();
-
-  const errorPath =
-    `/admin/products/${productId}/edit`;
-
-  const versions =
-    getVersions(
-      formData,
-      errorPath
-    );
-
-  const currentVersion =
-    getCurrentVersion(
-      versions
-    );
-
-  const product =
-    validateProduct(
-      productId,
-      formData,
-      errorPath,
-      currentVersion
-    );
-
-  const features =
-    getFeatures(
-      formData,
-      errorPath
-    );
-
-  const gallery =
-    getGallery(
-      productId,
-      formData,
-      errorPath
-    );
-
-  const productFile =
-    getProductFileInput(
-      productId,
-      formData,
-      errorPath
-    );
-
-  const {
-    id: _id,
-    ...updates
-  } = product;
-
-  const {
-    error: productError,
-  } = await supabase
-    .from("products")
-    .update(updates)
-    .eq(
-      "id",
+  /*
+   * Paddle is intentionally NOT part
+   * of the destructive rollback.
+   *
+   * Product remains usable/admin-editable
+   * even if Paddle API is temporarily down.
+   */
+  try {
+    await syncSavedProductWithPaddle(
       productId
     );
-
-  if (productError) {
-    redirectError(
-      errorPath,
-      productError.message
-    );
-  }
-
-  try {
-    await syncFeatures(
-      supabase,
-      productId,
-      features
-    );
-
-    await syncGallery(
-      supabase,
-      productId,
-      gallery
-    );
-
-    await syncVersions(
-      supabase,
-      productId,
-      versions
-    );
-
-    await syncPrimaryFile(
-      supabase,
-      productId,
-      productFile
-    );
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to save product content.";
-
-    redirectError(
-      errorPath,
-      message
+    console.error(
+      "Paddle catalog sync failed:",
+      error
     );
   }
 
@@ -1508,55 +1589,210 @@ export async function updateProduct(
   );
 
   redirect(
-    `/admin/products/${productId}/edit?message=${encodeURIComponent(
-      "Product updated successfully."
-    )}`
+    `/admin/products/${productId}/edit?created=1`
   );
 }
 
-export async function toggleProductStatus(
+/* =========================================================
+   UPDATE PRODUCT
+========================================================= */
+
+export async function updateProduct(
+  productId: string,
   formData: FormData
 ) {
-  const supabase =
-    await requireAdmin();
+  await requireAdmin();
 
-  const productId =
-    cleanString(
-      formData.get(
-        "productId"
-      )
-    );
-
-  const currentStatus =
-    cleanString(
-      formData.get(
-        "currentStatus"
-      )
-    ) === "true";
-
-  if (!productId) {
-    redirect(
-      "/admin/products"
+  if (
+    !isUuid(productId)
+  ) {
+    redirectError(
+      "/admin/products",
+      "Invalid product ID."
     );
   }
 
-  const { error } =
-    await supabase
-      .from("products")
-      .update({
-        active:
-          !currentStatus,
-      })
-      .eq(
-        "id",
-        productId
-      );
+  const errorPath =
+    `/admin/products/${productId}/edit`;
 
-  if (error) {
-    redirect(
-      `/admin/products?error=${encodeURIComponent(
-        error.message
-      )}`
+  let versions: ReturnType<
+    typeof getVersions
+  >;
+
+  try {
+    versions =
+      getVersions(
+        formData
+      );
+  } catch (error) {
+    redirectError(
+      errorPath,
+      error instanceof Error
+        ? error.message
+        : "Invalid release information."
+    );
+  }
+
+  const currentVersion =
+    getCurrentVersion(
+      versions
+    );
+
+  let product:
+    | ReturnType<
+        typeof validateProduct
+      >
+    | undefined;
+
+  try {
+    product =
+      validateProduct(
+        productId,
+        formData,
+        currentVersion
+      );
+  } catch (error) {
+    redirectError(
+      errorPath,
+      error instanceof Error
+        ? error.message
+        : "Invalid product information."
+    );
+  }
+
+  const features =
+    getFeatures(
+      formData
+    );
+
+  const gallery =
+    getGallery(
+      formData
+    );
+
+  const productFile =
+    getProductFileInput(
+      formData
+    );
+
+  const admin =
+    createAdminClient();
+
+  const {
+    error: updateError,
+  } = await admin
+    .from("products")
+    .update({
+      name:
+        product.name,
+
+      slug:
+        product.slug,
+
+      short_description:
+        product.short_description,
+
+      description:
+        product.description,
+
+      price_cents:
+        product.price_cents,
+
+      currency:
+        product.currency,
+
+      version:
+        product.version,
+
+      image_url:
+        product.image_url,
+
+      active:
+        product.active,
+
+      demo_url:
+        product.demo_url,
+
+      documentation_url:
+        product.documentation_url,
+
+      seo_title:
+        product.seo_title,
+
+      seo_description:
+        product.seo_description,
+
+      updated_at:
+        new Date().toISOString(),
+    })
+    .eq(
+      "id",
+      productId
+    );
+
+  if (updateError) {
+    redirectError(
+      errorPath,
+      updateError.code ===
+        "23505"
+        ? "A product with this slug already exists."
+        : "Unable to save product."
+    );
+  }
+
+  /*
+   * Existing codebase does not currently
+   * wrap all these writes in one DB
+   * transaction, so sync them sequentially.
+   */
+  try {
+    await syncFeatures(
+      productId,
+      features
+    );
+
+    await syncGallery(
+      productId,
+      gallery
+    );
+
+    await syncVersions(
+      productId,
+      versions
+    );
+
+    await syncPrimaryFile(
+      productId,
+      productFile
+    );
+  } catch (error) {
+    console.error(
+      "Product relation sync failed:",
+      error
+    );
+
+    redirectError(
+      errorPath,
+      error instanceof Error
+        ? error.message
+        : "Product was updated, but some related data could not be saved."
+    );
+  }
+
+  /*
+   * Sync metadata/price into Paddle.
+   *
+   * A Paddle failure should not destroy
+   * the Embernix product edit.
+   */
+  try {
+    await syncSavedProductWithPaddle(
+      productId
+    );
+  } catch (error) {
+    console.error(
+      "Paddle catalog sync failed:",
+      error
     );
   }
 
@@ -1564,7 +1800,72 @@ export async function toggleProductStatus(
     "/admin/products"
   );
 
+  revalidatePath(
+    `/admin/products/${productId}/edit`
+  );
+
+  revalidatePath(
+    "/products"
+  );
+
   redirect(
+    `/admin/products/${productId}/edit?saved=1`
+  );
+}
+
+/* =========================================================
+   TOGGLE PRODUCT STATUS
+========================================================= */
+
+export async function toggleProductStatus(
+  productId: string,
+  nextStatus: boolean
+) {
+  await requireAdmin();
+
+  if (
+    !isUuid(productId)
+  ) {
+    redirect(
+      "/admin/products"
+    );
+  }
+
+  const admin =
+    createAdminClient();
+
+  const {
+    error,
+  } = await admin
+    .from("products")
+    .update({
+      active:
+        nextStatus,
+
+      updated_at:
+        new Date().toISOString(),
+    })
+    .eq(
+      "id",
+      productId
+    );
+
+  if (error) {
+    console.error(
+      "Failed to update product status:",
+      error
+    );
+  }
+
+  revalidatePath(
     "/admin/products"
+  );
+
+  revalidatePath(
+    `/admin/products/${productId}/edit`
+  );
+
+  revalidatePath(
+    "/products"
   );
 }

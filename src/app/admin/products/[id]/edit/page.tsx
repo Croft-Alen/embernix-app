@@ -8,7 +8,9 @@ import {
   notFound,
 } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+} from "@/lib/supabase/server";
 
 import ProductForm from "@/components/admin/ProductForm";
 
@@ -24,6 +26,8 @@ type EditProductPageProps = {
   searchParams: Promise<{
     error?: string;
     message?: string;
+    created?: string;
+    saved?: string;
   }>;
 };
 
@@ -82,7 +86,9 @@ export default async function EditProductPage({
       seo_title,
       seo_description,
       demo_url,
-      documentation_url
+      documentation_url,
+      paddle_product_id,
+      paddle_price_id
     `)
     .eq(
       "id",
@@ -309,6 +315,13 @@ export default async function EditProductPage({
       product.id
     );
 
+  const successMessage =
+    query.created === "1"
+      ? "Product created successfully."
+      : query.saved === "1"
+        ? "Product saved successfully."
+        : query.message;
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-8">
       <div>
@@ -337,20 +350,16 @@ export default async function EditProductPage({
         </div>
       )}
 
-      {query.message && (
+      {successMessage && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {query.message}
+          {successMessage}
         </div>
       )}
 
       <ProductForm
         mode="edit"
-        action={
-          saveProduct
-        }
-        product={
-          product
-        }
+        action={saveProduct}
+        product={product}
         productFile={
           fileResult.data ??
           null
