@@ -17,8 +17,8 @@ import {
 type PaddleCheckoutButtonProps = {
   productSlug: string;
   acceptedTerms: boolean;
+  couponCode?: string | null;
 };
-
 export default function PaddleCheckoutButton({
   productSlug,
   acceptedTerms,
