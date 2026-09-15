@@ -321,6 +321,17 @@ export async function POST(
         | CheckoutRequest
         | null;
 
+        console.log(
+  "Checkout request received:",
+  {
+    orderNumber:
+      body?.orderNumber,
+
+    couponCode:
+      body?.couponCode,
+  }
+);
+
     const orderNumber =
       body?.orderNumber?.trim();
 

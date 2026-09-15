@@ -19,9 +19,11 @@ type PaddleCheckoutButtonProps = {
   acceptedTerms: boolean;
   couponCode?: string | null;
 };
+
 export default function PaddleCheckoutButton({
   productSlug,
   acceptedTerms,
+  couponCode,
 }: PaddleCheckoutButtonProps) {
   const [
     loading,
@@ -31,9 +33,9 @@ export default function PaddleCheckoutButton({
   const [
     error,
     setError,
-  ] = useState<
-    string | null
-  >(null);
+  ] = useState<string | null>(
+    null
+  );
 
   async function handleCheckout() {
     if (loading) {
@@ -52,10 +54,6 @@ export default function PaddleCheckoutButton({
     setError(null);
 
     try {
-      /*
-       * 1. Prepare/reuse the internal
-       * Embernix order.
-       */
       const preparation =
         await prepareCheckoutOrder(
           productSlug,
@@ -80,9 +78,17 @@ export default function PaddleCheckoutButton({
       }
 
       /*
-       * 2. Create/reuse Paddle transaction
-       * and receive Paddle's hosted URL.
+       * IMPORTANT:
+       *
+       * Capture exactly what CheckoutForm
+       * passed to this component.
        */
+      const normalizedCoupon =
+        couponCode
+          ?.trim()
+          .toUpperCase() ||
+        null;
+
       const response =
         await fetch(
           "/api/checkout/paddle",
@@ -97,6 +103,9 @@ export default function PaddleCheckoutButton({
             body: JSON.stringify({
               orderNumber:
                 preparation.orderNumber,
+
+              couponCode:
+                normalizedCoupon,
             }),
           }
         );
@@ -105,11 +114,15 @@ export default function PaddleCheckoutButton({
         (await response.json()) as {
           checkoutUrl?: string;
           transactionId?: string;
+          couponCode?: string | null;
+          discountId?: string | null;
           alreadyPaid?: boolean;
           error?: string;
         };
 
-      if (data.alreadyPaid) {
+      if (
+        data.alreadyPaid
+      ) {
         window.location.href =
           `/checkout/success?order=${encodeURIComponent(
             preparation.orderNumber
@@ -128,12 +141,6 @@ export default function PaddleCheckoutButton({
         );
       }
 
-      /*
-       * 3. Leave Embernix completely.
-       *
-       * Browser now goes to Paddle's own
-       * hosted checkout page.
-       */
       window.location.href =
         data.checkoutUrl;
     } catch (checkoutError) {
@@ -143,7 +150,8 @@ export default function PaddleCheckoutButton({
       );
 
       setError(
-        checkoutError instanceof Error
+        checkoutError instanceof
+          Error
           ? checkoutError.message
           : "Unable to start checkout."
       );

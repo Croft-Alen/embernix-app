@@ -158,18 +158,14 @@ export default function CheckoutForm({
         </div>
 
         <div className="mt-6">
-          <PaddleCheckoutButton
-            productSlug={
-              productSlug
-            }
-            acceptedTerms={
-              acceptedTerms
-            }
-            couponCode={
-              appliedCoupon?.code ??
-              null
-            }
-          />
+        <PaddleCheckoutButton
+  productSlug={productSlug}
+  acceptedTerms={acceptedTerms}
+  couponCode={
+    appliedCoupon?.code ??
+    null
+  }
+/>
         </div>
       </aside>
     </div>
