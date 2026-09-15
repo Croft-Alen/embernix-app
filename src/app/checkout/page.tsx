@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import {
   ArrowLeft,
-  ShoppingBag,
+  ShoppingCart,
 } from "lucide-react";
 
 import {
@@ -12,11 +12,6 @@ import {
 import CheckoutForm from "@/components/checkout/CheckoutForm";
 import OrderSummary from "@/components/checkout/OrderSummary";
 
-import {
-  getDisplayName,
-  type UserProfile,
-} from "@/lib/auth/profile";
-
 import { createClient } from "@/lib/supabase/server";
 
 type CheckoutPageProps = {
@@ -24,6 +19,17 @@ type CheckoutPageProps = {
     product?: string;
   }>;
 };
+
+function formatPrice(
+  cents: number,
+  currency: string
+) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
+}
 
 export default async function CheckoutPage({
   searchParams,
@@ -86,9 +92,7 @@ export default async function CheckoutPage({
   }
 
   /*
-   * Already purchased?
-   * Send customer straight to
-   * their owned product.
+   * Already owned?
    */
   const {
     data: ownership,
@@ -99,10 +103,7 @@ export default async function CheckoutPage({
       status
     `)
     .eq("user_id", user.id)
-    .eq(
-      "product_id",
-      product.id
-    )
+    .eq("product_id", product.id)
     .eq("status", "active")
     .maybeSingle();
 
@@ -112,44 +113,26 @@ export default async function CheckoutPage({
     );
   }
 
-  const {
-    data: profileData,
-  } = await supabase
-    .from("profiles")
-    .select(`
-      id,
-      full_name,
-      avatar_url,
-      created_at,
-      updated_at
-    `)
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const profile =
-    (profileData ??
-      null) as UserProfile | null;
-
-  const displayName =
-    getDisplayName(
-      user,
-      profile
+  const amountLabel =
+    formatPrice(
+      product.price_cents,
+      product.currency
     );
 
   return (
-    <div className="mx-auto max-w-7xl p-6 lg:p-8">
+    <div className="mx-auto max-w-6xl p-6 lg:p-8">
       <Link
-        href="/products"
+        href={`https://embernix.org/products/${product.slug}`}
         className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
       >
         <ArrowLeft className="h-4 w-4" />
-        My Products
+        Back to product
       </Link>
 
-      <div className="mt-5">
+      <div className="mt-6">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-            <ShoppingBag className="h-5 w-5" />
+            <ShoppingCart className="h-5 w-5" />
           </div>
 
           <div>
@@ -158,32 +141,34 @@ export default async function CheckoutPage({
             </h1>
 
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Complete your billing
-              details to continue.
+              Review your order and complete payment.
             </p>
           </div>
         </div>
       </div>
 
       <div className="mt-8 grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_380px]">
+        {/* LEFT */}
         <CheckoutForm
           productSlug={
             product.slug
           }
           email={
-            user.email ??
-            ""
+            user.email ?? ""
           }
-          initialName={
-            displayName
+          amountLabel={
+            amountLabel
           }
         />
 
-        <OrderSummary
-          product={
-            product
-          }
-        />
+        {/* RIGHT */}
+        <div className="lg:sticky lg:top-24">
+          <OrderSummary
+            product={
+              product
+            }
+          />
+        </div>
       </div>
     </div>
   );

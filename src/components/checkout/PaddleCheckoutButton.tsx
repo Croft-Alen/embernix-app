@@ -15,16 +15,18 @@ import {
   type Paddle,
 } from "@paddle/paddle-js";
 
-type PaddleCheckoutButtonProps = {
-  orderNumber: string;
+import {
+  prepareCheckoutOrder,
+} from "@/app/checkout/actions";
 
+type PaddleCheckoutButtonProps = {
+  productSlug: string;
   amountLabel: string;
+  acceptedTerms: boolean;
 };
 
 let paddlePromise:
-  | Promise<
-      Paddle | undefined
-    >
+  | Promise<Paddle | undefined>
   | null = null;
 
 function loadPaddle() {
@@ -35,7 +37,7 @@ function loadPaddle() {
   if (!token) {
     return Promise.reject(
       new Error(
-        "NEXT_PUBLIC_PADDLE_CLIENT_TOKEN is missing."
+        "Paddle checkout is not configured."
       )
     );
   }
@@ -59,8 +61,9 @@ function loadPaddle() {
 }
 
 export default function PaddleCheckoutButton({
-  orderNumber,
+  productSlug,
   amountLabel,
+  acceptedTerms,
 }: PaddleCheckoutButtonProps) {
   const [
     paddle,
@@ -82,47 +85,48 @@ export default function PaddleCheckoutButton({
   >(null);
 
   useEffect(() => {
-    let mounted =
-      true;
+    let mounted = true;
 
     loadPaddle()
-      .then(
-        (
-          instance
-        ) => {
-          if (mounted) {
-            setPaddle(
-              instance
-            );
-          }
+      .then((instance) => {
+        if (mounted) {
+          setPaddle(instance);
         }
-      )
-      .catch(
-        (loadError) => {
-          console.error(
-            "Failed to initialize Paddle:",
-            loadError
-          );
+      })
+      .catch((loadError) => {
+        console.error(
+          "Failed to initialize Paddle:",
+          loadError
+        );
 
-          if (mounted) {
-            setError(
-              "Payment checkout could not be initialized."
-            );
-          }
+        if (mounted) {
+          setError(
+            "Payment checkout could not be initialized."
+          );
         }
-      );
+      });
 
     return () => {
-      mounted =
-        false;
+      mounted = false;
     };
   }, []);
 
   async function handlePayment() {
-    if (
-      !paddle ||
-      loading
-    ) {
+    if (loading) {
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setError(
+        "Please agree to the Terms of Service before paying."
+      );
+      return;
+    }
+
+    if (!paddle) {
+      setError(
+        "Payment checkout is still loading. Please try again."
+      );
       return;
     }
 
@@ -130,40 +134,67 @@ export default function PaddleCheckoutButton({
     setError(null);
 
     try {
+      /*
+       * STEP 1:
+       * Silently prepare Embernix order.
+       */
+      const preparation =
+        await prepareCheckoutOrder(
+          productSlug,
+          acceptedTerms
+        );
+
+      if (!preparation.success) {
+        if (
+          preparation.ownedProductId
+        ) {
+          window.location.href =
+            `/products/${preparation.ownedProductId}`;
+          return;
+        }
+
+        throw new Error(
+          preparation.error
+        );
+      }
+
+      const orderNumber =
+        preparation.orderNumber;
+
+      /*
+       * STEP 2:
+       * Create/reuse Paddle transaction.
+       */
       const response =
         await fetch(
           "/api/checkout/paddle",
           {
-            method:
-              "POST",
+            method: "POST",
 
             headers: {
               "Content-Type":
                 "application/json",
             },
 
-            body:
-              JSON.stringify(
-                {
-                  orderNumber,
-                }
-              ),
+            body: JSON.stringify({
+              orderNumber,
+            }),
           }
         );
 
       const data =
         (await response.json()) as {
           transactionId?: string;
-
           alreadyPaid?: boolean;
-
           error?: string;
         };
 
-      if (
-        data.alreadyPaid
-      ) {
-        window.location.reload();
+      if (data.alreadyPaid) {
+        window.location.href =
+          `/checkout/success?order=${encodeURIComponent(
+            orderNumber
+          )}`;
+
         return;
       }
 
@@ -178,13 +209,8 @@ export default function PaddleCheckoutButton({
       }
 
       /*
-       * Paddle can open a checkout
-       * for the transaction we created
-       * on the server.
-       *
-       * successUrl returns customer
-       * to this order after successful
-       * checkout.
+       * STEP 3:
+       * Open Paddle immediately.
        */
       paddle.Checkout.open({
         transactionId:
@@ -198,26 +224,24 @@ export default function PaddleCheckoutButton({
             )}&payment=processing`,
         },
       });
-
-      setLoading(false);
     } catch (paymentError) {
       console.error(
+        "Checkout error:",
         paymentError
       );
 
       setError(
-        paymentError instanceof
-          Error
+        paymentError instanceof Error
           ? paymentError.message
           : "Unable to start payment."
       );
-
+    } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="w-full">
+    <div>
       {error && (
         <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
@@ -226,36 +250,29 @@ export default function PaddleCheckoutButton({
 
       <button
         type="button"
-        onClick={
-          handlePayment
-        }
+        onClick={handlePayment}
         disabled={
           loading ||
-          !paddle
+          !paddle ||
+          !acceptedTerms
         }
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-wait disabled:opacity-60"
+        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-6 text-sm font-semibold text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {loading ||
-        !paddle ? (
+        {loading ? (
           <>
             <LoaderCircle className="h-4 w-4 animate-spin" />
-
-            {loading
-              ? "Preparing payment..."
-              : "Loading payment..."}
+            Preparing checkout...
           </>
         ) : (
           <>
             <CreditCard className="h-4 w-4" />
-
             Pay {amountLabel}
           </>
         )}
       </button>
 
-      <p className="mt-3 text-center text-xs leading-5 text-[var(--muted)]">
-        Secure checkout powered
-        by Paddle.
+      <p className="mt-3 text-center text-xs text-[var(--muted)]">
+        Secure checkout powered by Paddle.
       </p>
     </div>
   );

@@ -14,8 +14,6 @@ import {
   redirect,
 } from "next/navigation";
 
-import PaddleCheckoutButton from "@/components/checkout/PaddleCheckoutButton";
-
 import { createClient } from "@/lib/supabase/server";
 
 type CheckoutSuccessPageProps = {
@@ -29,20 +27,11 @@ function formatPrice(
   cents: number,
   currency: string
 ) {
-  return new Intl.NumberFormat(
-    "en-US",
-    {
-      style:
-        "currency",
-
-      currency,
-
-      minimumFractionDigits:
-        2,
-    }
-  ).format(
-    cents / 100
-  );
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
 }
 
 export default async function CheckoutSuccessPage({
@@ -52,9 +41,7 @@ export default async function CheckoutSuccessPage({
     await searchParams;
 
   if (!query.order) {
-    redirect(
-      "/products"
-    );
+    redirect("/products");
   }
 
   const supabase =
@@ -62,19 +49,15 @@ export default async function CheckoutSuccessPage({
 
   const {
     data: { user },
-  } =
-    await supabase.auth.getUser();
+  } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(
-      "/login"
-    );
+    redirect("/login");
   }
 
   const {
     data: order,
-    error:
-      orderError,
+    error: orderError,
   } = await supabase
     .from("orders")
     .select(`
@@ -85,13 +68,8 @@ export default async function CheckoutSuccessPage({
       currency,
       subtotal_cents,
       total_cents,
-      customer_email,
-      customer_name,
-      payment_provider,
-      paddle_transaction_id,
       paddle_invoice_number,
-      paid_at,
-      created_at
+      paid_at
     `)
     .eq(
       "order_number",
@@ -113,9 +91,7 @@ export default async function CheckoutSuccessPage({
   const {
     data: items,
   } = await supabase
-    .from(
-      "order_items"
-    )
+    .from("order_items")
     .select(`
       id,
       product_id,
@@ -133,15 +109,8 @@ export default async function CheckoutSuccessPage({
     items?.[0];
 
   const isPaid =
-    order.status ===
-      "paid" &&
-    order.payment_status ===
-      "paid";
-
-  const isProcessing =
-    !isPaid &&
-    query.payment ===
-      "processing";
+    order.status === "paid" &&
+    order.payment_status === "paid";
 
   const totalLabel =
     formatPrice(
@@ -158,9 +127,7 @@ export default async function CheckoutSuccessPage({
             className={`flex h-16 w-16 items-center justify-center rounded-2xl ${
               isPaid
                 ? "bg-green-50 text-green-600"
-                : isProcessing
-                  ? "bg-amber-50 text-amber-600"
-                  : "bg-[var(--primary-soft)] text-[var(--primary)]"
+                : "bg-amber-50 text-amber-600"
             }`}
           >
             {isPaid ? (
@@ -173,22 +140,18 @@ export default async function CheckoutSuccessPage({
           <h1 className="mt-5 text-2xl font-semibold">
             {isPaid
               ? "Payment complete"
-              : isProcessing
-                ? "Confirming payment"
-                : "Complete your payment"}
+              : "Confirming payment"}
           </h1>
 
           <p className="mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">
             {isPaid
               ? "Your payment has been confirmed and your product is now available in your Embernix account."
-              : isProcessing
-                ? "Your checkout was completed. We're waiting for Paddle's verified payment confirmation before unlocking your product."
-                : "Your order has been created successfully. Complete the secure Paddle checkout to unlock your product."}
+              : "Your checkout was completed. We're waiting for Paddle's verified confirmation before unlocking your product."}
           </p>
         </div>
 
         <div className="p-6">
-          {/* INFO */}
+          {/* ORDER DETAILS */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl bg-[var(--surface-secondary)] p-4">
               <p className="text-xs text-[var(--muted)]">
@@ -196,9 +159,7 @@ export default async function CheckoutSuccessPage({
               </p>
 
               <p className="mt-2 text-sm font-semibold">
-                {
-                  order.order_number
-                }
+                {order.order_number}
               </p>
             </div>
 
@@ -212,24 +173,20 @@ export default async function CheckoutSuccessPage({
                   className={`h-2 w-2 rounded-full ${
                     isPaid
                       ? "bg-green-500"
-                      : isProcessing
-                        ? "bg-amber-500"
-                        : "bg-gray-400"
+                      : "bg-amber-500"
                   }`}
                 />
 
-                <p className="text-sm font-semibold capitalize">
+                <p className="text-sm font-semibold">
                   {isPaid
                     ? "Paid"
-                    : isProcessing
-                      ? "Processing"
-                      : order.payment_status}
+                    : "Processing"}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* PRODUCT */}
+          {/* ITEM */}
           {productItem && (
             <div className="mt-6 overflow-hidden rounded-xl border border-[var(--border)]">
               <div className="flex items-center gap-3 border-b border-[var(--border-light)] px-4 py-3">
@@ -248,16 +205,11 @@ export default async function CheckoutSuccessPage({
 
                   <div>
                     <p className="text-sm font-medium">
-                      {
-                        productItem.product_name
-                      }
+                      {productItem.product_name}
                     </p>
 
                     <p className="mt-1 text-xs text-[var(--muted)]">
-                      Quantity{" "}
-                      {
-                        productItem.quantity
-                      }
+                      Quantity {productItem.quantity}
                     </p>
                   </div>
                 </div>
@@ -280,9 +232,7 @@ export default async function CheckoutSuccessPage({
               </span>
 
               <p className="mt-1 text-xs uppercase text-[var(--muted)]">
-                {
-                  order.currency
-                }
+                {order.currency}
               </p>
             </div>
 
@@ -291,46 +241,32 @@ export default async function CheckoutSuccessPage({
             </span>
           </div>
 
-          {/* PAYMENT */}
-          {!isPaid &&
-            !isProcessing && (
-              <div className="mt-7">
-                <PaddleCheckoutButton
-                  orderNumber={
-                    order.order_number
-                  }
-                  amountLabel={
-                    totalLabel
-                  }
-                />
-              </div>
-            )}
-
           {/* PROCESSING */}
-          {isProcessing &&
-            !isPaid && (
-              <div className="mt-7 rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <p className="text-sm font-medium text-amber-900">
-                  Waiting for payment confirmation
-                </p>
+          {!isPaid && (
+            <div className="mt-7 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-900">
+                Payment confirmation in progress
+              </p>
 
-                <p className="mt-1 text-xs leading-5 text-amber-700">
-                  Access is only granted after Embernix receives and verifies Paddle&apos;s payment webhook.
-                </p>
+              <p className="mt-1 text-xs leading-5 text-amber-700">
+                Your product will unlock automatically
+                after Embernix receives Paddle&apos;s
+                verified payment confirmation.
+              </p>
 
-                <Link
-                  href={`/checkout/success?order=${encodeURIComponent(
-                    order.order_number
-                  )}`}
-                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 text-sm font-medium text-amber-900"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Refresh status
-                </Link>
-              </div>
-            )}
+              <Link
+                href={`/checkout/success?order=${encodeURIComponent(
+                  order.order_number
+                )}`}
+                className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 text-sm font-medium text-amber-900"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh status
+              </Link>
+            </div>
+          )}
 
-          {/* PAID DETAILS */}
+          {/* SUCCESS */}
           {isPaid && (
             <div className="mt-7 rounded-xl border border-green-200 bg-green-50 p-4">
               <div className="flex items-start gap-3">
@@ -342,16 +278,15 @@ export default async function CheckoutSuccessPage({
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-green-700">
-                    This product has been added to your Embernix product library.
+                    This product has been added to your
+                    Embernix product library.
                   </p>
 
                   {order.paddle_invoice_number && (
                     <p className="mt-2 text-xs text-green-700">
                       Paddle invoice:{" "}
                       <span className="font-medium">
-                        {
-                          order.paddle_invoice_number
-                        }
+                        {order.paddle_invoice_number}
                       </span>
                     </p>
                   )}
@@ -366,7 +301,7 @@ export default async function CheckoutSuccessPage({
               href="/orders"
               className="inline-flex h-11 items-center justify-center rounded-xl border border-[var(--border)] px-5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
             >
-              View orders
+              View order
             </Link>
 
             {isPaid &&
@@ -381,7 +316,7 @@ export default async function CheckoutSuccessPage({
             ) : (
               <Link
                 href="/products"
-                className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--border)] px-5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+                className="inline-flex h-11 items-center rounded-xl border border-[var(--border)] px-5 text-sm font-medium"
               >
                 My products
               </Link>
