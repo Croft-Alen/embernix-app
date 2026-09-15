@@ -132,7 +132,8 @@ export async function prepareCheckoutOrder(
   }
 
   /*
-   * Look for an existing pending order for this product.
+   * Look for an existing pending order
+   * for this same product.
    */
   const {
     data: pendingOrders,
@@ -168,21 +169,40 @@ export async function prepareCheckoutOrder(
 
       if (pendingItem) {
         /*
-         * Record fresh terms acceptance.
+         * Record fresh terms acceptance
+         * when the existing pending order
+         * is reused.
          */
         const admin = createAdminClient();
 
-        await admin
+        const {
+          error: termsUpdateError,
+        } = await admin
           .from("orders")
           .update({
             terms_accepted_at:
               new Date().toISOString(),
+
             terms_version:
               TERMS_VERSION,
+
             updated_at:
               new Date().toISOString(),
           })
           .eq("id", pendingOrder.id);
+
+        if (termsUpdateError) {
+          console.error(
+            "Failed to update terms acceptance:",
+            termsUpdateError
+          );
+
+          return {
+            success: false,
+            error:
+              "Unable to prepare your order. Please try again.",
+          };
+        }
 
         return {
           success: true,
@@ -199,6 +219,9 @@ export async function prepareCheckoutOrder(
   const checkoutToken = randomUUID();
   const orderNumber = createOrderNumber();
 
+  /*
+   * Create internal pending order.
+   */
   const {
     error: orderError,
   } = await admin
@@ -213,7 +236,8 @@ export async function prepareCheckoutOrder(
       status: "pending",
       payment_status: "unpaid",
 
-      currency: product.currency,
+      currency:
+        product.currency,
 
       subtotal_cents:
         product.price_cents,
@@ -224,9 +248,14 @@ export async function prepareCheckoutOrder(
       customer_email:
         user.email,
 
-      payment_provider: null,
-      provider_transaction_id: null,
-      paddle_transaction_id: null,
+      payment_provider:
+        null,
+
+      provider_transaction_id:
+        null,
+
+      paddle_transaction_id:
+        null,
 
       checkout_token:
         checkoutToken,
@@ -251,13 +280,24 @@ export async function prepareCheckoutOrder(
     };
   }
 
+  /*
+   * Create order item snapshot.
+   *
+   * IMPORTANT:
+   * line_total_cents is generated
+   * automatically by PostgreSQL.
+   * Do not insert a value into it.
+   */
   const {
     error: itemError,
   } = await admin
     .from("order_items")
     .insert({
-      order_id: orderId,
-      product_id: product.id,
+      order_id:
+        orderId,
+
+      product_id:
+        product.id,
 
       product_name:
         product.name,
@@ -266,9 +306,6 @@ export async function prepareCheckoutOrder(
         product.price_cents,
 
       quantity: 1,
-
-      line_total_cents:
-        product.price_cents,
     });
 
   if (itemError) {
@@ -277,6 +314,10 @@ export async function prepareCheckoutOrder(
       itemError
     );
 
+    /*
+     * Manual rollback so we don't leave
+     * an empty pending order behind.
+     */
     await admin
       .from("orders")
       .delete()
