@@ -28,8 +28,7 @@ function buildHostedCheckoutUrl(
   customerEmail: string
 ) {
   const baseUrl =
-    process.env
-      .PADDLE_HOSTED_CHECKOUT_URL;
+    process.env.PADDLE_HOSTED_CHECKOUT_URL;
 
   if (!baseUrl) {
     throw new Error(
@@ -61,10 +60,7 @@ function buildHostedCheckoutUrl(
 }
 
 function checkoutResponse(
-  body: Record<
-    string,
-    unknown
-  >,
+  body: Record<string, unknown>,
   invoiceId: string,
   status = 200
 ) {
@@ -215,9 +211,7 @@ export async function POST(
       error:
         itemsError,
     } = await admin
-      .from(
-        "invoice_items"
-      )
+      .from("invoice_items")
       .select(`
         id,
         title,
@@ -268,49 +262,48 @@ export async function POST(
           450
         );
 
-    const transactionItem =
-      {
-        quantity: 1,
+    const transactionItem = {
+      quantity: 1,
 
-        price: {
-          description:
-            `Embernix ${invoice.invoice_number}`,
+      price: {
+        description:
+          `Embernix ${invoice.invoice_number}`,
 
-          name:
-            invoice.invoice_number,
+        name:
+          invoice.invoice_number,
 
-          billingCycle:
-            null,
+        billingCycle:
+          null,
 
-          trialPeriod:
-            null,
+        trialPeriod:
+          null,
 
-          taxMode:
-            "internal",
+        taxMode:
+          "internal",
 
-          unitPrice: {
-            amount:
-              String(
-                invoice.total_cents
-              ),
+        unitPrice: {
+          amount:
+            String(
+              invoice.total_cents
+            ),
 
-            currencyCode:
-              invoice.currency,
-          },
-
-          product: {
-            name:
-              `Invoice ${invoice.invoice_number}`,
-
-            description:
-              description ||
-              "Embernix service invoice",
-
-            taxCategory:
-              "professional-services",
-          },
+          currencyCode:
+            invoice.currency,
         },
-      };
+
+        product: {
+          name:
+            `Invoice ${invoice.invoice_number}`,
+
+          description:
+            description ||
+            "Embernix service invoice",
+
+          taxCategory:
+            "standard",
+        },
+      },
+    };
 
     if (
       invoice.paddle_transaction_id
@@ -426,7 +419,9 @@ export async function POST(
         "unpaid"
       );
 
-    if (updateError) {
+    if (
+      updateError
+    ) {
       console.error(
         "Failed to save invoice Paddle transaction:",
         updateError
