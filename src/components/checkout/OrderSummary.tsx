@@ -2,16 +2,32 @@ import {
   Package,
 } from "lucide-react";
 
+import type {
+  AppliedCoupon,
+} from "@/components/checkout/CouponInput";
+
 type Product = {
   name: string;
-  image_url: string | null;
-  version: string | null;
+
+  image_url:
+    | string
+    | null;
+
+  version:
+    | string
+    | null;
+
   price_cents: number;
+
   currency: string;
 };
 
 type OrderSummaryProps = {
   product: Product;
+
+  appliedCoupon:
+    | AppliedCoupon
+    | null;
 };
 
 function formatPrice(
@@ -21,20 +37,35 @@ function formatPrice(
   return new Intl.NumberFormat(
     "en-US",
     {
-      style: "currency",
+      style:
+        "currency",
+
       currency,
-      minimumFractionDigits: 2,
+
+      minimumFractionDigits:
+        2,
     }
-  ).format(cents / 100);
+  ).format(
+    cents / 100
+  );
 }
 
 export default function OrderSummary({
   product,
+  appliedCoupon,
 }: OrderSummaryProps) {
-  const price =
-    formatPrice(
-      product.price_cents,
-      product.currency
+  const subtotal =
+    product.price_cents;
+
+  const discount =
+    appliedCoupon?.discountCents ??
+    0;
+
+  const total =
+    Math.max(
+      0,
+      subtotal -
+        discount
     );
 
   return (
@@ -63,19 +94,26 @@ export default function OrderSummary({
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="font-semibold">
-                {product.name}
+                {
+                  product.name
+                }
               </p>
 
               {product.version && (
                 <p className="mt-1 text-xs text-[var(--muted)]">
                   Version{" "}
-                  {product.version}
+                  {
+                    product.version
+                  }
                 </p>
               )}
             </div>
 
             <p className="shrink-0 text-sm font-semibold">
-              {price}
+              {formatPrice(
+                subtotal,
+                product.currency
+              )}
             </p>
           </div>
         </div>
@@ -90,8 +128,34 @@ export default function OrderSummary({
             Subtotal
           </span>
 
-          <span>{price}</span>
+          <span>
+            {formatPrice(
+              subtotal,
+              product.currency
+            )}
+          </span>
         </div>
+
+        {appliedCoupon &&
+          discount > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-green-700">
+                Discount (
+                {
+                  appliedCoupon.code
+                }
+                )
+              </span>
+
+              <span className="font-medium text-green-700">
+                -
+                {formatPrice(
+                  discount,
+                  product.currency
+                )}
+              </span>
+            </div>
+          )}
 
         <div className="flex items-center justify-between text-sm">
           <span className="text-[var(--muted)]">
@@ -113,12 +177,17 @@ export default function OrderSummary({
           </p>
 
           <p className="mt-1 text-xs uppercase text-[var(--muted)]">
-            {product.currency}
+            {
+              product.currency
+            }
           </p>
         </div>
 
         <p className="text-2xl font-semibold tracking-tight">
-          {price}
+          {formatPrice(
+            total,
+            product.currency
+          )}
         </p>
       </div>
     </>
