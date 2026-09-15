@@ -3,16 +3,92 @@ import {
   NextResponse,
 } from "next/server";
 
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPaddle } from "@/lib/paddle/server";
+import { createClient } from "@/lib/supabase/server";
 
-export const runtime =
-  "nodejs";
+export const runtime = "nodejs";
 
 type CheckoutRequest = {
   orderNumber?: string;
 };
+
+function buildHostedCheckoutUrl(
+  transactionId: string,
+  customerEmail: string
+) {
+  const baseUrl =
+    process.env.PADDLE_HOSTED_CHECKOUT_URL;
+
+  if (!baseUrl) {
+    throw new Error(
+      "PADDLE_HOSTED_CHECKOUT_URL is not configured."
+    );
+  }
+
+  const url = new URL(baseUrl);
+
+  /*
+   * Paddle Hosted Checkout supports
+   * passing an existing transaction.
+   */
+  url.searchParams.set(
+    "transaction_id",
+    transactionId
+  );
+
+  /*
+   * Prefill the authenticated Embernix
+   * customer's email.
+   */
+  if (customerEmail) {
+    url.searchParams.set(
+      "user_email",
+      customerEmail
+    );
+  }
+
+  url.searchParams.set(
+    "theme",
+    "light"
+  );
+
+  return url.toString();
+}
+
+function checkoutResponse(
+  body: Record<string, unknown>,
+  orderNumber: string,
+  status = 200
+) {
+  const response =
+    NextResponse.json(
+      body,
+      { status }
+    );
+
+  /*
+   * Hosted Checkout has a fixed redirect URL.
+   *
+   * Keep the internal order reference in an
+   * HttpOnly first-party cookie so that
+   * /checkout/return knows which order the
+   * returning browser belongs to.
+   */
+  response.cookies.set(
+    "embernix_checkout_order",
+    orderNumber,
+    {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60,
+    }
+  );
+
+  return response;
+}
 
 export async function POST(
   request: NextRequest
@@ -23,14 +99,12 @@ export async function POST(
 
     const {
       data: { user },
-    } =
-      await supabase.auth.getUser();
+    } = await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json(
         {
-          error:
-            "Authentication required.",
+          error: "Authentication required.",
         },
         {
           status: 401,
@@ -41,9 +115,7 @@ export async function POST(
     const body =
       (await request
         .json()
-        .catch(
-          () => null
-        )) as
+        .catch(() => null)) as
         | CheckoutRequest
         | null;
 
@@ -53,8 +125,7 @@ export async function POST(
     if (!orderNumber) {
       return NextResponse.json(
         {
-          error:
-            "Order number is required.",
+          error: "Order number is required.",
         },
         {
           status: 400,
@@ -63,16 +134,11 @@ export async function POST(
     }
 
     /*
-     * CUSTOMER-SCOPED ORDER LOOKUP.
-     *
-     * User can only retrieve their
-     * own order because of RLS +
-     * explicit user_id filter.
+     * Customer-scoped lookup.
      */
     const {
       data: order,
-      error:
-        orderError,
+      error: orderError,
     } = await supabase
       .from("orders")
       .select(`
@@ -82,6 +148,7 @@ export async function POST(
         status,
         payment_status,
         currency,
+        customer_email,
         paddle_transaction_id
       `)
       .eq(
@@ -100,8 +167,7 @@ export async function POST(
     ) {
       return NextResponse.json(
         {
-          error:
-            "Order not found.",
+          error: "Order not found.",
         },
         {
           status: 404,
@@ -110,24 +176,23 @@ export async function POST(
     }
 
     /*
-     * Payment already done.
+     * Already completed.
      */
     if (
-      order.status ===
-        "paid" ||
-      order.payment_status ===
-        "paid"
+      order.status === "paid" ||
+      order.payment_status === "paid"
     ) {
-      return NextResponse.json({
-        alreadyPaid: true,
-      });
+      return checkoutResponse(
+        {
+          alreadyPaid: true,
+        },
+        order.order_number
+      );
     }
 
     if (
-      order.status !==
-        "pending" ||
-      order.payment_status !==
-        "unpaid"
+      order.status !== "pending" ||
+      order.payment_status !== "unpaid"
     ) {
       return NextResponse.json(
         {
@@ -141,30 +206,37 @@ export async function POST(
     }
 
     /*
-     * If we already created a Paddle
-     * transaction, reuse it.
-     *
-     * Prevent duplicate Paddle
-     * transactions when the customer
-     * closes/reopens checkout.
+     * Reuse an existing Paddle transaction.
      */
     if (
       order.paddle_transaction_id
     ) {
-      return NextResponse.json({
-        transactionId:
+      const checkoutUrl =
+        buildHostedCheckoutUrl(
           order.paddle_transaction_id,
-      });
+          order.customer_email ??
+            user.email ??
+            ""
+        );
+
+      return checkoutResponse(
+        {
+          checkoutUrl,
+          transactionId:
+            order.paddle_transaction_id,
+        },
+        order.order_number
+      );
     }
 
+    /*
+     * Find product snapshot.
+     */
     const {
       data: item,
-      error:
-        itemError,
+      error: itemError,
     } = await supabase
-      .from(
-        "order_items"
-      )
+      .from("order_items")
       .select(`
         id,
         product_id,
@@ -193,18 +265,15 @@ export async function POST(
     }
 
     /*
-     * Get the Paddle catalog price
-     * from the canonical product.
+     * Canonical Paddle price.
      */
     const {
       data: product,
-      error:
-        productError,
+      error: productError,
     } = await supabase
       .from("products")
       .select(`
         id,
-        name,
         paddle_price_id,
         active
       `)
@@ -220,8 +289,7 @@ export async function POST(
     ) {
       return NextResponse.json(
         {
-          error:
-            "Product was not found.",
+          error: "Product was not found.",
         },
         {
           status: 404,
@@ -230,13 +298,12 @@ export async function POST(
     }
 
     if (
-      !product
-        .paddle_price_id
+      !product.paddle_price_id
     ) {
       return NextResponse.json(
         {
           error:
-            "This product has not been connected to Paddle yet.",
+            "This product is not connected to checkout yet.",
         },
         {
           status: 400,
@@ -248,52 +315,49 @@ export async function POST(
       getPaddle();
 
     /*
-     * Create real Paddle transaction.
+     * Create the actual Paddle transaction.
      *
-     * Paddle.js will collect the
-     * customer/tax/payment details.
+     * We continue using a server-created
+     * transaction so:
+     *
+     * - amount/product is canonical
+     * - webhook has Embernix references
+     * - retry/reconciliation remains easy
      */
     const transaction =
-      await paddle.transactions.create(
-        {
-          items: [
-            {
-              priceId:
-                product.paddle_price_id,
+      await paddle.transactions.create({
+        items: [
+          {
+            priceId:
+              product.paddle_price_id,
 
-              quantity:
-                Math.max(
-                  Number(
-                    item.quantity ??
-                      1
-                  ),
-                  1
-                ),
-            },
-          ],
-
-          collectionMode:
-            "automatic",
-
-          customData: {
-            embernix_order_id:
-              order.id,
-
-            embernix_order_number:
-              order.order_number,
-
-            embernix_user_id:
-              user.id,
-
-            embernix_product_id:
-              product.id,
+            quantity: Math.max(
+              Number(
+                item.quantity ?? 1
+              ),
+              1
+            ),
           },
-        }
-      );
+        ],
 
-    if (
-      !transaction?.id
-    ) {
+        collectionMode: "automatic",
+
+        customData: {
+          embernix_order_id:
+            order.id,
+
+          embernix_order_number:
+            order.order_number,
+
+          embernix_user_id:
+            user.id,
+
+          embernix_product_id:
+            product.id,
+        },
+      });
+
+    if (!transaction?.id) {
       return NextResponse.json(
         {
           error:
@@ -305,19 +369,12 @@ export async function POST(
       );
     }
 
-    /*
-     * Now securely bind the Paddle
-     * transaction to our internal
-     * order.
-     */
     const admin =
       createAdminClient();
 
     const {
-      data:
-        updatedOrder,
-      error:
-        updateError,
+      data: updatedOrder,
+      error: updateError,
     } = await admin
       .from("orders")
       .update({
@@ -356,7 +413,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Unable to connect the payment to your order.",
+            "Unable to connect payment to your order.",
         },
         {
           status: 500,
@@ -364,20 +421,37 @@ export async function POST(
       );
     }
 
-    return NextResponse.json({
-      transactionId:
+    /*
+     * THIS is now what we open.
+     *
+     * Fully hosted by Paddle.
+     */
+    const checkoutUrl =
+      buildHostedCheckoutUrl(
         transaction.id,
-    });
+        order.customer_email ??
+          user.email ??
+          ""
+      );
+
+    return checkoutResponse(
+      {
+        checkoutUrl,
+        transactionId:
+          transaction.id,
+      },
+      order.order_number
+    );
   } catch (error) {
     console.error(
-      "Paddle checkout error:",
+      "Paddle Hosted Checkout error:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "Unable to start payment. Please try again.",
+          "Unable to start checkout. Please try again.",
       },
       {
         status: 500,

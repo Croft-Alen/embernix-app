@@ -1,19 +1,14 @@
 "use client";
 
 import {
-  CreditCard,
+  ArrowRight,
   LoaderCircle,
+  LockKeyhole,
 } from "lucide-react";
 
 import {
-  useEffect,
   useState,
 } from "react";
-
-import {
-  initializePaddle,
-  type Paddle,
-} from "@paddle/paddle-js";
 
 import {
   prepareCheckoutOrder,
@@ -21,57 +16,13 @@ import {
 
 type PaddleCheckoutButtonProps = {
   productSlug: string;
-  amountLabel: string;
   acceptedTerms: boolean;
 };
 
-let paddlePromise:
-  | Promise<Paddle | undefined>
-  | null = null;
-
-function loadPaddle() {
-  const token =
-    process.env
-      .NEXT_PUBLIC_PADDLE_CLIENT_TOKEN;
-
-  if (!token) {
-    return Promise.reject(
-      new Error(
-        "Paddle checkout is not configured."
-      )
-    );
-  }
-
-  if (!paddlePromise) {
-    const environment =
-      process.env
-        .NEXT_PUBLIC_PADDLE_ENVIRONMENT ===
-      "production"
-        ? "production"
-        : "sandbox";
-
-    paddlePromise =
-      initializePaddle({
-        token,
-        environment,
-      });
-  }
-
-  return paddlePromise;
-}
-
 export default function PaddleCheckoutButton({
   productSlug,
-  amountLabel,
   acceptedTerms,
 }: PaddleCheckoutButtonProps) {
-  const [
-    paddle,
-    setPaddle,
-  ] = useState<
-    Paddle | undefined
-  >();
-
   const [
     loading,
     setLoading,
@@ -84,49 +35,16 @@ export default function PaddleCheckoutButton({
     string | null
   >(null);
 
-  useEffect(() => {
-    let mounted = true;
-
-    loadPaddle()
-      .then((instance) => {
-        if (mounted) {
-          setPaddle(instance);
-        }
-      })
-      .catch((loadError) => {
-        console.error(
-          "Failed to initialize Paddle:",
-          loadError
-        );
-
-        if (mounted) {
-          setError(
-            "Payment checkout could not be initialized."
-          );
-        }
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  async function handlePayment() {
+  async function handleCheckout() {
     if (loading) {
       return;
     }
 
     if (!acceptedTerms) {
       setError(
-        "Please agree to the Terms of Service before paying."
+        "Please agree to the Terms of Service."
       );
-      return;
-    }
 
-    if (!paddle) {
-      setError(
-        "Payment checkout is still loading. Please try again."
-      );
       return;
     }
 
@@ -135,8 +53,8 @@ export default function PaddleCheckoutButton({
 
     try {
       /*
-       * STEP 1:
-       * Silently prepare Embernix order.
+       * 1. Prepare/reuse the internal
+       * Embernix order.
        */
       const preparation =
         await prepareCheckoutOrder(
@@ -144,12 +62,15 @@ export default function PaddleCheckoutButton({
           acceptedTerms
         );
 
-      if (!preparation.success) {
+      if (
+        !preparation.success
+      ) {
         if (
           preparation.ownedProductId
         ) {
           window.location.href =
             `/products/${preparation.ownedProductId}`;
+
           return;
         }
 
@@ -158,12 +79,9 @@ export default function PaddleCheckoutButton({
         );
       }
 
-      const orderNumber =
-        preparation.orderNumber;
-
       /*
-       * STEP 2:
-       * Create/reuse Paddle transaction.
+       * 2. Create/reuse Paddle transaction
+       * and receive Paddle's hosted URL.
        */
       const response =
         await fetch(
@@ -177,13 +95,15 @@ export default function PaddleCheckoutButton({
             },
 
             body: JSON.stringify({
-              orderNumber,
+              orderNumber:
+                preparation.orderNumber,
             }),
           }
         );
 
       const data =
         (await response.json()) as {
+          checkoutUrl?: string;
           transactionId?: string;
           alreadyPaid?: boolean;
           error?: string;
@@ -192,7 +112,7 @@ export default function PaddleCheckoutButton({
       if (data.alreadyPaid) {
         window.location.href =
           `/checkout/success?order=${encodeURIComponent(
-            orderNumber
+            preparation.orderNumber
           )}`;
 
         return;
@@ -200,42 +120,34 @@ export default function PaddleCheckoutButton({
 
       if (
         !response.ok ||
-        !data.transactionId
+        !data.checkoutUrl
       ) {
         throw new Error(
           data.error ||
-            "Unable to start payment."
+            "Unable to start checkout."
         );
       }
 
       /*
-       * STEP 3:
-       * Open Paddle immediately.
+       * 3. Leave Embernix completely.
+       *
+       * Browser now goes to Paddle's own
+       * hosted checkout page.
        */
-      paddle.Checkout.open({
-        transactionId:
-          data.transactionId,
-
-        settings: {
-          successUrl:
-            `${window.location.origin}` +
-            `/checkout/success?order=${encodeURIComponent(
-              orderNumber
-            )}&payment=processing`,
-        },
-      });
-    } catch (paymentError) {
+      window.location.href =
+        data.checkoutUrl;
+    } catch (checkoutError) {
       console.error(
         "Checkout error:",
-        paymentError
+        checkoutError
       );
 
       setError(
-        paymentError instanceof Error
-          ? paymentError.message
-          : "Unable to start payment."
+        checkoutError instanceof Error
+          ? checkoutError.message
+          : "Unable to start checkout."
       );
-    } finally {
+
       setLoading(false);
     }
   }
@@ -250,30 +162,32 @@ export default function PaddleCheckoutButton({
 
       <button
         type="button"
-        onClick={handlePayment}
+        onClick={
+          handleCheckout
+        }
         disabled={
           loading ||
-          !paddle ||
           !acceptedTerms
         }
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-6 text-sm font-semibold text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? (
           <>
             <LoaderCircle className="h-4 w-4 animate-spin" />
-            Preparing checkout...
+            Redirecting...
           </>
         ) : (
           <>
-            <CreditCard className="h-4 w-4" />
-            Pay {amountLabel}
+            Continue to checkout
+            <ArrowRight className="h-4 w-4" />
           </>
         )}
       </button>
 
-      <p className="mt-3 text-center text-xs text-[var(--muted)]">
-        Secure checkout powered by Paddle.
-      </p>
+      <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-[var(--muted)]">
+        <LockKeyhole className="h-3.5 w-3.5" />
+        Secure checkout by Paddle
+      </div>
     </div>
   );
 }

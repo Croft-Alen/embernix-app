@@ -1,26 +1,35 @@
 "use client";
 
 import {
-  LockKeyhole,
-  UserRound,
+  Check,
+  ShoppingBag,
 } from "lucide-react";
 
 import {
   useState,
 } from "react";
 
+import OrderSummary from "@/components/checkout/OrderSummary";
 import PaddleCheckoutButton from "@/components/checkout/PaddleCheckoutButton";
+
+type CheckoutProduct = {
+  name: string;
+  image_url: string | null;
+  version: string | null;
+  price_cents: number;
+  currency: string;
+};
 
 type CheckoutFormProps = {
   productSlug: string;
   email: string;
-  amountLabel: string;
+  product: CheckoutProduct;
 };
 
 export default function CheckoutForm({
   productSlug,
   email,
-  amountLabel,
+  product,
 }: CheckoutFormProps) {
   const [
     acceptedTerms,
@@ -28,54 +37,76 @@ export default function CheckoutForm({
   ] = useState(false);
 
   return (
-    <div className="space-y-5">
-      {/* ACCOUNT */}
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="border-b border-[var(--border-light)] px-6 py-5">
-          <h2 className="text-base font-semibold">
-            Your account
-          </h2>
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      {/* LEFT */}
+      <div className="rounded-2xl border border-[var(--border)] bg-white p-6 sm:p-7">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <ShoppingBag className="h-5 w-5" />
+          </div>
 
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Your purchase will be linked to this
-            Embernix account.
-          </p>
-        </div>
+          <div>
+            <h2 className="font-semibold">
+              Your cart
+            </h2>
 
-        <div className="p-6">
-          <div className="flex items-center gap-3 rounded-xl bg-[var(--surface-secondary)] p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[var(--primary)]">
-              <UserRound className="h-5 w-5" />
-            </div>
-
-            <div className="min-w-0">
-              <p className="text-xs text-[var(--muted)]">
-                Signed in as
-              </p>
-
-              <p className="mt-1 truncate text-sm font-medium">
-                {email}
-              </p>
-            </div>
+            <p className="mt-0.5 text-sm text-[var(--muted)]">
+              1 item
+            </p>
           </div>
         </div>
-      </section>
 
-      {/* TERMS */}
-      <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            checked={acceptedTerms}
-            onChange={(event) =>
+        <div className="mt-6">
+          <OrderSummary
+            product={product}
+          />
+        </div>
+
+        <div className="mt-7 border-t border-[var(--border-light)] pt-6">
+          <p className="text-xs text-[var(--muted)]">
+            Purchasing as
+          </p>
+
+          <p className="mt-1 text-sm font-medium">
+            {email}
+          </p>
+        </div>
+      </div>
+
+      {/* RIGHT */}
+      <aside className="h-fit rounded-2xl border border-[var(--border)] bg-white p-6 lg:sticky lg:top-24">
+        <h2 className="text-lg font-semibold">
+          Checkout
+        </h2>
+
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Complete your purchase securely.
+        </p>
+
+        <div className="my-6 border-t border-[var(--border-light)]" />
+
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={acceptedTerms}
+            onClick={() =>
               setAcceptedTerms(
-                event.target.checked
+                (current) => !current
               )
             }
-            className="mt-1 h-4 w-4 shrink-0 accent-[var(--primary)]"
-          />
+            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
+              acceptedTerms
+                ? "border-[var(--primary)] bg-[var(--primary)] text-white"
+                : "border-[var(--border)] bg-white"
+            }`}
+          >
+            {acceptedTerms && (
+              <Check className="h-3.5 w-3.5" />
+            )}
+          </button>
 
-          <span className="text-sm leading-6 text-[var(--muted)]">
+          <p className="text-sm leading-6 text-[var(--muted)]">
             I agree to the{" "}
             <a
               href="https://embernix.org/terms"
@@ -84,32 +115,18 @@ export default function CheckoutForm({
               className="font-medium text-[var(--foreground)] underline underline-offset-4"
             >
               Terms of Service
-            </a>{" "}
-            and acknowledge the applicable policies
-            for this digital purchase.
-          </span>
-        </label>
-      </section>
-
-      {/* PAY */}
-      <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-        <PaddleCheckoutButton
-          productSlug={
-            productSlug
-          }
-          amountLabel={
-            amountLabel
-          }
-          acceptedTerms={
-            acceptedTerms
-          }
-        />
-
-        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-[var(--muted)]">
-          <LockKeyhole className="h-3.5 w-3.5" />
-          Payment details are handled securely by Paddle.
+            </a>
+            .
+          </p>
         </div>
-      </section>
+
+        <div className="mt-6">
+          <PaddleCheckoutButton
+            productSlug={productSlug}
+            acceptedTerms={acceptedTerms}
+          />
+        </div>
+      </aside>
     </div>
   );
 }

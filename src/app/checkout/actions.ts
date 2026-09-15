@@ -2,8 +2,8 @@
 
 import { randomUUID } from "crypto";
 
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export type PrepareCheckoutResult =
   | {
@@ -42,8 +42,7 @@ export async function prepareCheckoutOrder(
   if (!acceptedTerms) {
     return {
       success: false,
-      error:
-        "You must agree to the Terms of Service before continuing.",
+      error: "Please agree to the Terms of Service.",
     };
   }
 
@@ -72,14 +71,15 @@ export async function prepareCheckoutOrder(
   if (!user.email) {
     return {
       success: false,
-      error:
-        "Your Embernix account does not have a valid email address.",
+      error: "Your Embernix account has no valid email address.",
     };
   }
 
   /*
-   * Canonical product.
-   * Never trust product/price data from browser.
+   * Canonical product lookup.
+   *
+   * Product name / currency / price always
+   * come from our database, never the browser.
    */
   const {
     data: product,
@@ -92,8 +92,7 @@ export async function prepareCheckoutOrder(
       name,
       price_cents,
       currency,
-      active,
-      paddle_price_id
+      active
     `)
     .eq("slug", slug)
     .eq("active", true)
@@ -107,11 +106,10 @@ export async function prepareCheckoutOrder(
   }
 
   /*
-   * Prevent purchasing something already owned.
+   * Don't let a customer purchase an
+   * actively-owned product again.
    */
-  const {
-    data: ownership,
-  } = await supabase
+  const { data: ownership } = await supabase
     .from("customer_products")
     .select(`
       id,
@@ -132,17 +130,17 @@ export async function prepareCheckoutOrder(
   }
 
   /*
-   * Look for an existing pending order
-   * for this same product.
+   * Reuse an existing unpaid order for
+   * this same product when possible.
+   *
+   * This prevents creating a pile of orders
+   * when somebody leaves Paddle and retries.
    */
-  const {
-    data: pendingOrders,
-  } = await supabase
+  const { data: pendingOrders } = await supabase
     .from("orders")
     .select(`
       id,
       order_number,
-      paddle_transaction_id,
       created_at
     `)
     .eq("user_id", user.id)
@@ -155,9 +153,7 @@ export async function prepareCheckoutOrder(
 
   if (pendingOrders?.length) {
     for (const pendingOrder of pendingOrders) {
-      const {
-        data: pendingItem,
-      } = await supabase
+      const { data: pendingItem } = await supabase
         .from("order_items")
         .select(`
           id,
@@ -167,49 +163,37 @@ export async function prepareCheckoutOrder(
         .eq("product_id", product.id)
         .maybeSingle();
 
-      if (pendingItem) {
-        /*
-         * Record fresh terms acceptance
-         * when the existing pending order
-         * is reused.
-         */
-        const admin = createAdminClient();
+      if (!pendingItem) {
+        continue;
+      }
 
-        const {
-          error: termsUpdateError,
-        } = await admin
-          .from("orders")
-          .update({
-            terms_accepted_at:
-              new Date().toISOString(),
+      const admin = createAdminClient();
 
-            terms_version:
-              TERMS_VERSION,
+      const { error: updateError } = await admin
+        .from("orders")
+        .update({
+          terms_accepted_at: new Date().toISOString(),
+          terms_version: TERMS_VERSION,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", pendingOrder.id);
 
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq("id", pendingOrder.id);
-
-        if (termsUpdateError) {
-          console.error(
-            "Failed to update terms acceptance:",
-            termsUpdateError
-          );
-
-          return {
-            success: false,
-            error:
-              "Unable to prepare your order. Please try again.",
-          };
-        }
+      if (updateError) {
+        console.error(
+          "Failed to refresh checkout terms acceptance:",
+          updateError
+        );
 
         return {
-          success: true,
-          orderNumber:
-            pendingOrder.order_number,
+          success: false,
+          error: "Unable to prepare checkout. Please try again.",
         };
       }
+
+      return {
+        success: true,
+        orderNumber: pendingOrder.order_number,
+      };
     }
   }
 
@@ -220,11 +204,9 @@ export async function prepareCheckoutOrder(
   const orderNumber = createOrderNumber();
 
   /*
-   * Create internal pending order.
+   * Internal Embernix order.
    */
-  const {
-    error: orderError,
-  } = await admin
+  const { error: orderError } = await admin
     .from("orders")
     .insert({
       id: orderId,
@@ -236,35 +218,21 @@ export async function prepareCheckoutOrder(
       status: "pending",
       payment_status: "unpaid",
 
-      currency:
-        product.currency,
+      currency: product.currency,
 
-      subtotal_cents:
-        product.price_cents,
+      subtotal_cents: product.price_cents,
+      total_cents: product.price_cents,
 
-      total_cents:
-        product.price_cents,
+      customer_email: user.email,
 
-      customer_email:
-        user.email,
+      payment_provider: null,
+      provider_transaction_id: null,
+      paddle_transaction_id: null,
 
-      payment_provider:
-        null,
+      checkout_token: checkoutToken,
 
-      provider_transaction_id:
-        null,
-
-      paddle_transaction_id:
-        null,
-
-      checkout_token:
-        checkoutToken,
-
-      terms_accepted_at:
-        new Date().toISOString(),
-
-      terms_version:
-        TERMS_VERSION,
+      terms_accepted_at: new Date().toISOString(),
+      terms_version: TERMS_VERSION,
     });
 
   if (orderError) {
@@ -275,35 +243,25 @@ export async function prepareCheckoutOrder(
 
     return {
       success: false,
-      error:
-        "Unable to prepare your order. Please try again.",
+      error: "Unable to prepare checkout. Please try again.",
     };
   }
 
   /*
-   * Create order item snapshot.
+   * Product snapshot.
    *
-   * IMPORTANT:
-   * line_total_cents is generated
-   * automatically by PostgreSQL.
-   * Do not insert a value into it.
+   * line_total_cents is a GENERATED
+   * database column, so do not insert it.
    */
-  const {
-    error: itemError,
-  } = await admin
+  const { error: itemError } = await admin
     .from("order_items")
     .insert({
-      order_id:
-        orderId,
+      order_id: orderId,
+      product_id: product.id,
 
-      product_id:
-        product.id,
+      product_name: product.name,
 
-      product_name:
-        product.name,
-
-      unit_price_cents:
-        product.price_cents,
+      unit_price_cents: product.price_cents,
 
       quantity: 1,
     });
@@ -314,10 +272,6 @@ export async function prepareCheckoutOrder(
       itemError
     );
 
-    /*
-     * Manual rollback so we don't leave
-     * an empty pending order behind.
-     */
     await admin
       .from("orders")
       .delete()
@@ -325,8 +279,7 @@ export async function prepareCheckoutOrder(
 
     return {
       success: false,
-      error:
-        "Unable to prepare your order. Please try again.",
+      error: "Unable to prepare checkout. Please try again.",
     };
   }
 
