@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CircleDollarSign,
   FileText,
+  LoaderCircle,
   ReceiptText,
 } from "lucide-react";
 
@@ -17,9 +18,17 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
+import PayInvoiceButton from "@/components/invoices/PayInvoiceButton";
+
+import InvoicePaymentStatusWatcher from "@/components/invoices/InvoicePaymentStatusWatcher";
+
 type InvoiceDetailPageProps = {
   params: Promise<{
     id: string;
+  }>;
+
+  searchParams: Promise<{
+    payment?: string;
   }>;
 };
 
@@ -31,13 +40,21 @@ function formatMoney(
     return new Intl.NumberFormat(
       "en-US",
       {
-        style: "currency",
+        style:
+          "currency",
+
         currency:
-          currency || "USD",
+          currency ||
+          "USD",
       }
-    ).format(cents / 100);
+    ).format(
+      cents / 100
+    );
   } catch {
-    return `${currency || "USD"} ${(
+    return `${
+      currency ||
+      "USD"
+    } ${(
       cents / 100
     ).toFixed(2)}`;
   }
@@ -66,8 +83,11 @@ function formatDate(
   return date.toLocaleString(
     "en-US",
     {
-      dateStyle: "medium",
-      timeStyle: "short",
+      dateStyle:
+        "medium",
+
+      timeStyle:
+        "short",
     }
   );
 }
@@ -98,10 +118,15 @@ function statusClass(
 
 export default async function ClientInvoiceDetailPage({
   params,
+  searchParams,
 }: InvoiceDetailPageProps) {
   const {
     id,
-  } = await params;
+  } =
+    await params;
+
+  const query =
+    await searchParams;
 
   const supabase =
     await createClient();
@@ -197,14 +222,27 @@ export default async function ClientInvoiceDetailPage({
   const rows =
     items ?? [];
 
+  const processing =
+    query.payment ===
+      "processing" &&
+    invoice.status ===
+      "unpaid";
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6 lg:p-8">
+      <InvoicePaymentStatusWatcher
+        enabled={
+          processing
+        }
+      />
+
       <div>
         <Link
           href="/invoices"
           className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
         >
           <ArrowLeft className="h-4 w-4" />
+
           Invoices
         </Link>
 
@@ -231,6 +269,23 @@ export default async function ClientInvoiceDetailPage({
           )}
         </p>
       </div>
+
+      {processing && (
+        <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+
+          Confirming your payment...
+        </div>
+      )}
+
+      {query.payment ===
+        "processing" &&
+        invoice.status ===
+          "paid" && (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+            Payment completed successfully.
+          </div>
+        )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
@@ -345,9 +400,7 @@ export default async function ClientInvoiceDetailPage({
 
               <tbody>
                 {rows.map(
-                  (
-                    item
-                  ) => (
+                  (item) => (
                     <tr
                       key={
                         item.id
@@ -579,23 +632,43 @@ export default async function ClientInvoiceDetailPage({
           </h2>
 
           <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[var(--muted)]">
-            {invoice.notes}
+            {
+              invoice.notes
+            }
           </p>
         </section>
       )}
 
       {invoice.status ===
-        "unpaid" && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-          <p className="text-sm font-medium text-amber-900">
-            This invoice is unpaid.
-          </p>
+        "unpaid" &&
+        !processing && (
+          <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
+            <div className="mx-auto max-w-md">
+              <h2 className="text-center font-semibold">
+                Payment required
+              </h2>
 
-          <p className="mt-1 text-sm text-amber-700">
-            Payment support will be available here in the next step.
-          </p>
-        </div>
-      )}
+              <p className="mt-2 text-center text-sm text-[var(--muted)]">
+                Pay{" "}
+                {formatMoney(
+                  Number(
+                    invoice.total_cents
+                  ),
+                  invoice.currency
+                )}{" "}
+                securely through Paddle.
+              </p>
+
+              <div className="mt-5">
+                <PayInvoiceButton
+                  invoiceId={
+                    invoice.id
+                  }
+                />
+              </div>
+            </div>
+          </section>
+        )}
     </div>
   );
 }

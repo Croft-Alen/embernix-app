@@ -3,11 +3,15 @@ import {
   NextResponse,
 } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getPaddle } from "@/lib/paddle/server";
+import {
+  createAdminClient,
+} from "@/lib/supabase/admin";
 
-export const runtime =
-  "nodejs";
+import {
+  getPaddle,
+} from "@/lib/paddle/server";
+
+export const runtime = "nodejs";
 
 export async function POST(
   request: NextRequest
@@ -16,10 +20,7 @@ export async function POST(
     request.headers.get(
       "paddle-signature"
     );
-console.log("Paddle signature header:", {
-  exists: Boolean(signature),
-  preview: signature?.slice(0, 30),
-});
+
   if (!signature) {
     return NextResponse.json(
       {
@@ -36,12 +37,6 @@ console.log("Paddle signature header:", {
     process.env
       .PADDLE_WEBHOOK_SECRET;
 
-console.log("Paddle webhook config:", {
-  secretLoaded: Boolean(secret),
-  secretPrefix: secret?.slice(0, 11),
-  secretSuffix: secret?.slice(-4),
-  secretLength: secret?.length,
-});
   if (!secret) {
     console.error(
       "PADDLE_WEBHOOK_SECRET is not configured."
@@ -58,13 +53,6 @@ console.log("Paddle webhook config:", {
     );
   }
 
-  /*
-   * IMPORTANT:
-   * Read the RAW body as text.
-   *
-   * Do not call request.json()
-   * before verification.
-   */
   const rawBody =
     await request.text();
 
@@ -72,12 +60,6 @@ console.log("Paddle webhook config:", {
     const paddle =
       getPaddle();
 
-    /*
-     * This verifies:
-     * - Paddle-Signature
-     * - payload integrity
-     * - webhook authenticity
-     */
     const event =
       await paddle.webhooks.unmarshal(
         rawBody,
@@ -85,11 +67,6 @@ console.log("Paddle webhook config:", {
         signature
       );
 
-    /*
-     * We only provision the product
-     * after Paddle says the
-     * transaction is COMPLETED.
-     */
     if (
       event.eventType !==
       "transaction.completed"
@@ -99,21 +76,15 @@ console.log("Paddle webhook config:", {
       });
     }
 
-    /*
-     * SDK responses use camelCase.
-     */
     const transaction =
       event.data as any;
 
     const transactionId =
       String(
-        transaction.id ??
-          ""
+        transaction.id ?? ""
       );
 
-    if (
-      !transactionId
-    ) {
+    if (!transactionId) {
       return NextResponse.json(
         {
           error:
@@ -132,20 +103,260 @@ console.log("Paddle webhook config:", {
         unknown
       >;
 
-    const customOrderId =
-      typeof customData.embernix_order_id ===
+    const paymentType =
+      typeof customData.embernix_payment_type ===
       "string"
-        ? customData.embernix_order_id
+        ? customData.embernix_payment_type
         : null;
 
     const admin =
       createAdminClient();
 
     /*
-     * First try the transaction ID
-     * that was stored when checkout
-     * was created.
+     * =====================================================
+     * INVOICE PAYMENT
+     * =====================================================
      */
+
+    if (
+      paymentType ===
+      "invoice"
+    ) {
+      const customInvoiceId =
+        typeof customData.embernix_invoice_id ===
+        "string"
+          ? customData.embernix_invoice_id
+          : null;
+
+      let {
+        data: invoice,
+        error:
+          invoiceError,
+      } = await admin
+        .from("invoices")
+        .select(`
+          id,
+          invoice_number,
+          user_id,
+          status,
+          currency,
+          subtotal_cents,
+          total_cents,
+          paddle_transaction_id
+        `)
+        .eq(
+          "paddle_transaction_id",
+          transactionId
+        )
+        .maybeSingle();
+
+      if (
+        !invoice &&
+        customInvoiceId
+      ) {
+        const recoveryResult =
+          await admin
+            .from("invoices")
+            .select(`
+              id,
+              invoice_number,
+              user_id,
+              status,
+              currency,
+              subtotal_cents,
+              total_cents,
+              paddle_transaction_id
+            `)
+            .eq(
+              "id",
+              customInvoiceId
+            )
+            .maybeSingle();
+
+        invoice =
+          recoveryResult.data;
+
+        invoiceError =
+          recoveryResult.error;
+      }
+
+      if (
+        invoiceError ||
+        !invoice
+      ) {
+        console.error(
+          "Paddle webhook could not find Embernix invoice:",
+          {
+            transactionId,
+            customInvoiceId,
+            invoiceError,
+          }
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Invoice not found.",
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+
+      if (
+        invoice.paddle_transaction_id &&
+        invoice.paddle_transaction_id !==
+          transactionId
+      ) {
+        console.error(
+          "Paddle invoice transaction mismatch.",
+          {
+            invoiceId:
+              invoice.id,
+
+            stored:
+              invoice.paddle_transaction_id,
+
+            received:
+              transactionId,
+          }
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Transaction mismatch.",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
+      if (
+        invoice.status ===
+        "paid"
+      ) {
+        return NextResponse.json({
+          received: true,
+          fulfilled: true,
+          paymentType:
+            "invoice",
+        });
+      }
+
+      const paddleSubtotal =
+        Number(
+          transaction.details
+            ?.totals
+            ?.subtotal
+        );
+
+      const paddleTotal =
+        Number(
+          transaction.details
+            ?.totals
+            ?.total
+        );
+
+      const updateData: Record<
+        string,
+        unknown
+      > = {
+        status:
+          "paid",
+
+        paid_at:
+          new Date().toISOString(),
+
+        payment_provider:
+          "paddle",
+
+        paddle_transaction_id:
+          transactionId,
+
+        updated_at:
+          new Date().toISOString(),
+      };
+
+      if (
+        Number.isFinite(
+          paddleSubtotal
+        )
+      ) {
+        updateData.subtotal_cents =
+          paddleSubtotal;
+      }
+
+      if (
+        Number.isFinite(
+          paddleTotal
+        )
+      ) {
+        updateData.total_cents =
+          paddleTotal;
+      }
+
+      if (
+        transaction.currencyCode
+      ) {
+        updateData.currency =
+          transaction.currencyCode;
+      }
+
+      const {
+        error:
+          invoiceUpdateError,
+      } = await admin
+        .from("invoices")
+        .update(
+          updateData
+        )
+        .eq(
+          "id",
+          invoice.id
+        );
+
+      if (
+        invoiceUpdateError
+      ) {
+        console.error(
+          "Failed to finalize paid invoice:",
+          invoiceUpdateError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Invoice finalization failed.",
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+
+      return NextResponse.json({
+        received: true,
+        fulfilled: true,
+        paymentType:
+          "invoice",
+      });
+    }
+
+    /*
+     * =====================================================
+     * PRODUCT ORDER PAYMENT
+     * =====================================================
+     */
+
+    const customOrderId =
+      typeof customData.embernix_order_id ===
+      "string"
+        ? customData.embernix_order_id
+        : null;
+
     let {
       data: order,
       error:
@@ -167,24 +378,13 @@ console.log("Paddle webhook config:", {
       )
       .maybeSingle();
 
-    /*
-     * Recovery path:
-     *
-     * If Paddle transaction creation
-     * succeeded but saving txn_... to
-     * Supabase failed, customData
-     * still contains our internal
-     * order ID.
-     */
     if (
       !order &&
       customOrderId
     ) {
       const recoveryResult =
         await admin
-          .from(
-            "orders"
-          )
+          .from("orders")
           .select(`
             id,
             user_id,
@@ -220,10 +420,6 @@ console.log("Paddle webhook config:", {
         }
       );
 
-      /*
-       * 500 tells Paddle processing
-       * failed so delivery can retry.
-       */
       return NextResponse.json(
         {
           error:
@@ -235,10 +431,6 @@ console.log("Paddle webhook config:", {
       );
     }
 
-    /*
-     * Protect against mismatched
-     * transaction IDs.
-     */
     if (
       order.paddle_transaction_id &&
       order.paddle_transaction_id !==
@@ -269,12 +461,6 @@ console.log("Paddle webhook config:", {
       );
     }
 
-    /*
-     * Find the product purchased.
-     *
-     * Current Embernix checkout is
-     * one product per order.
-     */
     const {
       data: item,
       error:
@@ -314,13 +500,6 @@ console.log("Paddle webhook config:", {
       );
     }
 
-    /*
-     * Provision ownership FIRST.
-     *
-     * Upsert makes fulfillment
-     * idempotent. Paddle may retry
-     * the same webhook safely.
-     */
     const {
       error:
         ownershipError,
@@ -370,20 +549,18 @@ console.log("Paddle webhook config:", {
       );
     }
 
-    /*
-     * Paddle amounts are represented
-     * as minor-unit strings.
-     */
     const paddleSubtotal =
       Number(
         transaction.details
-          ?.totals?.subtotal
+          ?.totals
+          ?.subtotal
       );
 
     const paddleTotal =
       Number(
         transaction.details
-          ?.totals?.total
+          ?.totals
+          ?.total
       );
 
     const updateData: Record<
@@ -420,12 +597,6 @@ console.log("Paddle webhook config:", {
         new Date().toISOString(),
     };
 
-    /*
-     * Update internal amount with
-     * Paddle's final calculated
-     * amount including any applicable
-     * checkout calculations.
-     */
     if (
       Number.isFinite(
         paddleSubtotal
@@ -486,12 +657,10 @@ console.log("Paddle webhook config:", {
     return NextResponse.json({
       received: true,
       fulfilled: true,
+      paymentType:
+        "product",
     });
   } catch (error) {
-    /*
-     * Includes invalid webhook
-     * signatures.
-     */
     console.error(
       "Paddle webhook verification failed:",
       error

@@ -6,6 +6,35 @@ import {
 export async function GET(
   request: NextRequest
 ) {
+  const invoiceId =
+    request.cookies.get(
+      "embernix_invoice_checkout"
+    )?.value;
+
+  if (invoiceId) {
+    const invoiceUrl =
+      new URL(
+        `/invoices/${invoiceId}`,
+        request.url
+      );
+
+    invoiceUrl.searchParams.set(
+      "payment",
+      "processing"
+    );
+
+    const response =
+      NextResponse.redirect(
+        invoiceUrl
+      );
+
+    response.cookies.delete(
+      "embernix_invoice_checkout"
+    );
+
+    return response;
+  }
+
   const orderNumber =
     request.cookies.get(
       "embernix_checkout_order"
