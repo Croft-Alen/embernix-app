@@ -649,17 +649,15 @@ export default function InvoicePdfDocument({
               item,
               index
             ) => (
-              <View
-                key={item.id}
-                style={[
-                  styles.tableRow,
-                  index ===
-                    invoice.items
-                      .length -
-                      1 &&
-                    styles.lastTableRow,
-                ]}
-              >
+             <View
+  key={item.id}
+  style={[
+    styles.tableRow,
+    index === invoice.items.length - 1
+      ? styles.lastTableRow
+      : undefined,
+  ]}
+>
                 <View
                   style={
                     styles.colQty
