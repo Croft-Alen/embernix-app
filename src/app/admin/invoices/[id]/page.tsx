@@ -14,6 +14,8 @@ import {
   notFound,
 } from "next/navigation";
 
+import DownloadInvoiceButton from "@/components/invoices/DownloadInvoiceButton";
+
 import {
   createAdminClient,
 } from "@/lib/supabase/admin";
@@ -32,13 +34,21 @@ function formatMoney(
     return new Intl.NumberFormat(
       "en-US",
       {
-        style: "currency",
+        style:
+          "currency",
+
         currency:
-          currency || "USD",
+          currency ||
+          "USD",
       }
-    ).format(cents / 100);
+    ).format(
+      cents / 100
+    );
   } catch {
-    return `${currency || "USD"} ${(
+    return `${
+      currency ||
+      "USD"
+    } ${(
       cents / 100
     ).toFixed(2)}`;
   }
@@ -67,8 +77,11 @@ function formatDate(
   return date.toLocaleString(
     "en-US",
     {
-      dateStyle: "medium",
-      timeStyle: "short",
+      dateStyle:
+        "medium",
+
+      timeStyle:
+        "short",
     }
   );
 }
@@ -210,6 +223,14 @@ export default async function AdminInvoicePage({
           }),
     ]);
 
+  if (
+    itemsResult.error
+  ) {
+    throw new Error(
+      "Unable to load invoice items."
+    );
+  }
+
   const items =
     itemsResult.data ??
     [];
@@ -256,6 +277,7 @@ export default async function AdminInvoicePage({
             className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
           >
             <ArrowLeft className="h-4 w-4" />
+
             Invoices
           </Link>
 
@@ -271,7 +293,9 @@ export default async function AdminInvoicePage({
                 invoice.status
               )}`}
             >
-              {invoice.status}
+              {
+                invoice.status
+              }
             </span>
           </div>
 
@@ -283,15 +307,24 @@ export default async function AdminInvoicePage({
           </p>
         </div>
 
-        {canEdit && (
-          <Link
-            href={`/admin/invoices/${invoice.id}/edit`}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
-          >
-            <FilePenLine className="h-4 w-4" />
-            Edit invoice
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <DownloadInvoiceButton
+            invoiceId={
+              invoice.id
+            }
+          />
+
+          {canEdit && (
+            <Link
+              href={`/admin/invoices/${invoice.id}/edit`}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              <FilePenLine className="h-4 w-4" />
+
+              Edit invoice
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -570,7 +603,9 @@ export default async function AdminInvoicePage({
               </h2>
 
               <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[var(--muted)]">
-                {invoice.notes}
+                {
+                  invoice.notes
+                }
               </p>
             </section>
           )}

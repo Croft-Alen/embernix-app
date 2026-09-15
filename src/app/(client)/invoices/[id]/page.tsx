@@ -18,9 +18,11 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
-import PayInvoiceButton from "@/components/invoices/PayInvoiceButton";
+import DownloadInvoiceButton from "@/components/invoices/DownloadInvoiceButton";
 
 import InvoicePaymentStatusWatcher from "@/components/invoices/InvoicePaymentStatusWatcher";
+
+import PayInvoiceButton from "@/components/invoices/PayInvoiceButton";
 
 type InvoiceDetailPageProps = {
   params: Promise<{
@@ -122,8 +124,7 @@ export default async function ClientInvoiceDetailPage({
 }: InvoiceDetailPageProps) {
   const {
     id,
-  } =
-    await params;
+  } = await params;
 
   const query =
     await searchParams;
@@ -236,38 +237,46 @@ export default async function ClientInvoiceDetailPage({
         }
       />
 
-      <div>
-        <Link
-          href="/invoices"
-          className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
-        >
-          <ArrowLeft className="h-4 w-4" />
-
-          Invoices
-        </Link>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <h1 className="font-mono text-2xl font-semibold">
-            {
-              invoice.invoice_number
-            }
-          </h1>
-
-          <span
-            className={`inline-flex rounded-full px-3 py-1 text-xs font-medium capitalize ${statusClass(
-              invoice.status
-            )}`}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <Link
+            href="/invoices"
+            className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
           >
-            {invoice.status}
-          </span>
+            <ArrowLeft className="h-4 w-4" />
+
+            Invoices
+          </Link>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <h1 className="font-mono text-2xl font-semibold">
+              {
+                invoice.invoice_number
+              }
+            </h1>
+
+            <span
+              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium capitalize ${statusClass(
+                invoice.status
+              )}`}
+            >
+              {invoice.status}
+            </span>
+          </div>
+
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Created{" "}
+            {formatDate(
+              invoice.created_at
+            )}
+          </p>
         </div>
 
-        <p className="mt-2 text-sm text-[var(--muted)]">
-          Created{" "}
-          {formatDate(
-            invoice.created_at
-          )}
-        </p>
+        <DownloadInvoiceButton
+          invoiceId={
+            invoice.id
+          }
+        />
       </div>
 
       {processing && (
