@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import ProductCoverUploader from "@/components/admin/ProductCoverUploader";
+
 import ProductFeaturesEditor, {
   type ProductFeatureItem,
 } from "@/components/admin/ProductFeaturesEditor";
@@ -345,6 +346,7 @@ export default function ProductForm({
         <div className="mt-6">
           <ProductCoverUploader
             productId={product.id}
+            productName={product.name}
             initialImageUrl={
               product.image_url
             }
@@ -375,7 +377,7 @@ export default function ProductForm({
         <div className="mt-6">
           <ProductRichTextEditor
             productId={product.id}
-            initialValue={
+            initialContent={
               product.description ??
               ""
             }
@@ -676,7 +678,9 @@ export default function ProductForm({
                 ""
               }
               className={inputClass}
-              placeholder={product.name}
+              placeholder={
+                product.name
+              }
             />
           </div>
 
@@ -714,17 +718,19 @@ export default function ProductForm({
           Cancel
         </Link>
 
-        {isEdit && product.slug && (
-          <a
-            href={`https://embernix.org/products/${product.slug}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
-          >
-            View product
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        )}
+        {isEdit &&
+          product.slug && (
+            <a
+              href={`https://embernix.org/products/${product.slug}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              View product
+
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          )}
 
         <button
           type="submit"
