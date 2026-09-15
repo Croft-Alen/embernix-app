@@ -13,6 +13,7 @@ import {
   ReceiptText,
   Settings,
   ShoppingCart,
+  TicketPercent,
   Users,
   Wrench,
   X,
@@ -23,56 +24,96 @@ type AdminSidebarProps = {
   onClose?: () => void;
 };
 
-const navigation = [
+type NavigationItem = {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{
+    size?: number;
+    strokeWidth?: number;
+    className?: string;
+  }>;
+};
+
+type NavigationSection = {
+  title: string;
+  items: NavigationItem[];
+};
+
+const navigationSections: NavigationSection[] = [
   {
-    label: "Dashboard",
-    href: "/admin/dashboard",
-    icon: Gauge,
+    title: "Overview",
+    items: [
+      {
+        label: "Dashboard",
+        href: "/admin/dashboard",
+        icon: Gauge,
+      },
+    ],
   },
   {
-    label: "Customers",
-    href: "/admin/customers",
-    icon: Users,
+    title: "Management",
+    items: [
+      {
+        label: "Customers",
+        href: "/admin/customers",
+        icon: Users,
+      },
+      {
+        label: "Orders",
+        href: "/admin/orders",
+        icon: ShoppingCart,
+      },
+      {
+        label: "Products",
+        href: "/admin/products",
+        icon: Package,
+      },
+      {
+        label: "Coupons",
+        href: "/admin/coupons",
+        icon: TicketPercent,
+      },
+      {
+        label: "Invoices",
+        href: "/admin/invoices",
+        icon: ReceiptText,
+      },
+    ],
   },
   {
-    label: "Orders",
-    href: "/admin/orders",
-    icon: ShoppingCart,
+    title: "Operations",
+    items: [
+      {
+        label: "Services",
+        href: "/admin/services",
+        icon: Wrench,
+      },
+      {
+        label: "Projects",
+        href: "/admin/projects",
+        icon: FolderKanban,
+      },
+      {
+        label: "Tickets",
+        href: "/admin/tickets",
+        icon: Headphones,
+      },
+    ],
   },
   {
-    label: "Products",
-    href: "/admin/products",
-    icon: Package,
-  },
-  {
-    label: "Services",
-    href: "/admin/services",
-    icon: Wrench,
-  },
-  {
-    label: "Projects",
-    href: "/admin/projects",
-    icon: FolderKanban,
-  },
-  {
-    label: "Invoices",
-    href: "/admin/invoices",
-    icon: ReceiptText,
-  },
-  {
-    label: "Tickets",
-    href: "/admin/tickets",
-    icon: Headphones,
-  },
-  {
-    label: "Content",
-    href: "/admin/content",
-    icon: FileText,
-  },
-  {
-    label: "Settings",
-    href: "/admin/settings",
-    icon: Settings,
+    title: "System",
+    items: [
+      {
+        label: "Content",
+        href: "/admin/content",
+        icon: FileText,
+      },
+      {
+        label: "Settings",
+        href: "/admin/settings",
+        icon: Settings,
+      },
+    ],
   },
 ];
 
@@ -160,47 +201,61 @@ export default function AdminSidebar({
         />
 
         <nav className="flex-1 overflow-y-auto px-3 py-5">
-          <p
-            className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em]"
-            style={{
-              color: "rgba(255,255,255,0.36)",
-            }}
-          >
-            Management
-          </p>
-
-          <div className="space-y-1">
-            {navigation.map((item) => {
-              const Icon = item.icon;
-
-              const active =
-                pathname === item.href ||
-                pathname.startsWith(`${item.href}/`);
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className="flex h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-medium transition-colors"
-                  style={
-                    active
-                      ? {
-                          background:
-                            "rgba(255,255,255,0.10)",
-                          color: "#ffffff",
-                        }
-                      : {
-                          color:
-                            "rgba(255,255,255,0.62)",
-                        }
-                  }
+          <div className="space-y-7">
+            {navigationSections.map((section) => (
+              <div key={section.title}>
+                <p
+                  className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em]"
+                  style={{
+                    color: "rgba(255,255,255,0.36)",
+                  }}
                 >
-                  <Icon size={18} strokeWidth={2} />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
+                  {section.title}
+                </p>
+
+                <div className="space-y-1">
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+
+                    const active =
+                      pathname === item.href ||
+                      pathname.startsWith(
+                        `${item.href}/`
+                      );
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={onClose}
+                        className="flex h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-medium transition-colors"
+                        style={
+                          active
+                            ? {
+                                background:
+                                  "rgba(255,255,255,0.10)",
+                                color: "#ffffff",
+                              }
+                            : {
+                                color:
+                                  "rgba(255,255,255,0.62)",
+                              }
+                        }
+                      >
+                        <Icon
+                          size={18}
+                          strokeWidth={2}
+                        />
+
+                        <span>
+                          {item.label}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </nav>
 

@@ -15,53 +15,33 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
-export const runtime =
-  "nodejs";
+export const runtime = "nodejs";
 
 type CheckoutRequest = {
   orderNumber?: string;
-
-  couponCode?:
-    | string
-    | null;
+  couponCode?: string | null;
 };
 
 type ResolvedDiscount = {
-  discountId:
-    | string
-    | null;
-
-  code:
-    | string
-    | null;
+  discountId: string | null;
+  code: string | null;
 };
 
 function normalizeCode(
-  value:
-    | string
-    | null
-    | undefined
+  value: string | null | undefined
 ) {
-  return String(
-    value ?? ""
-  )
+  return String(value ?? "")
     .trim()
     .toUpperCase();
 }
 
-/* =========================================================
-   HOSTED CHECKOUT URL
-========================================================= */
-
 function buildHostedCheckoutUrl(
   transactionId: string,
   customerEmail: string,
-  discount:
-    ResolvedDiscount
+  discount: ResolvedDiscount
 ) {
   const baseUrl =
-    process.env
-      .PADDLE_HOSTED_CHECKOUT_URL;
+    process.env.PADDLE_HOSTED_CHECKOUT_URL;
 
   if (!baseUrl) {
     throw new Error(
@@ -69,36 +49,19 @@ function buildHostedCheckoutUrl(
     );
   }
 
-  const url =
-    new URL(baseUrl);
+  const url = new URL(baseUrl);
 
-  /*
-   * Existing server-created transaction.
-   */
   url.searchParams.set(
     "transaction_id",
     transactionId
   );
 
-  /*
-   * IMPORTANT:
-   *
-   * Explicitly give Hosted Checkout
-   * the coupon too.
-   *
-   * Paddle Hosted Checkout supports
-   * discount_code and discount_id.
-   *
-   * We prefer the customer-facing code.
-   */
   if (discount.code) {
     url.searchParams.set(
       "discount_code",
       discount.code
     );
-  } else if (
-    discount.discountId
-  ) {
+  } else if (discount.discountId) {
     url.searchParams.set(
       "discount_id",
       discount.discountId
@@ -120,15 +83,8 @@ function buildHostedCheckoutUrl(
   return url.toString();
 }
 
-/* =========================================================
-   RESPONSE
-========================================================= */
-
 function checkoutResponse(
-  body: Record<
-    string,
-    unknown
-  >,
+  body: Record<string, unknown>,
   orderNumber: string,
   status = 200
 ) {
@@ -145,31 +101,21 @@ function checkoutResponse(
     orderNumber,
     {
       httpOnly: true,
-
       secure: true,
-
       sameSite: "lax",
-
       path: "/",
-
-      maxAge:
-        60 * 60,
+      maxAge: 60 * 60,
     }
   );
 
   return response;
 }
 
-/* =========================================================
-   RESOLVE COUPON
-========================================================= */
-
 async function resolveDiscount(
   couponCode:
     | string
     | null
     | undefined,
-
   productCurrency: string
 ): Promise<ResolvedDiscount> {
   const code =
@@ -231,12 +177,7 @@ async function resolveDiscount(
     );
   }
 
-  /*
-   * Expiry validation.
-   */
-  if (
-    coupon.expires_at
-  ) {
+  if (coupon.expires_at) {
     const expiry =
       new Date(
         coupon.expires_at
@@ -255,16 +196,11 @@ async function resolveDiscount(
     }
   }
 
-  /*
-   * Flat Paddle discounts must use
-   * the same currency as transaction.
-   */
   if (
     coupon.discount_type ===
       "flat" &&
     String(
-      coupon.currency ??
-        ""
+      coupon.currency ?? ""
     ).toUpperCase() !==
       String(
         productCurrency
@@ -283,10 +219,6 @@ async function resolveDiscount(
       coupon.code,
   };
 }
-
-/* =========================================================
-   POST
-========================================================= */
 
 export async function POST(
   request: NextRequest
@@ -321,17 +253,6 @@ export async function POST(
         | CheckoutRequest
         | null;
 
-        console.log(
-  "Checkout request received:",
-  {
-    orderNumber:
-      body?.orderNumber,
-
-    couponCode:
-      body?.couponCode,
-  }
-);
-
     const orderNumber =
       body?.orderNumber?.trim();
 
@@ -346,10 +267,6 @@ export async function POST(
         }
       );
     }
-
-    /* =====================================================
-       ORDER
-    ===================================================== */
 
     const {
       data: order,
@@ -400,8 +317,7 @@ export async function POST(
     ) {
       return checkoutResponse(
         {
-          alreadyPaid:
-            true,
+          alreadyPaid: true,
         },
         order.order_number
       );
@@ -423,10 +339,6 @@ export async function POST(
         }
       );
     }
-
-    /* =====================================================
-       ORDER ITEM
-    ===================================================== */
 
     const {
       data: item,
@@ -460,10 +372,6 @@ export async function POST(
         }
       );
     }
-
-    /* =====================================================
-       PRODUCT
-    ===================================================== */
 
     const {
       data: product,
@@ -512,10 +420,6 @@ export async function POST(
       );
     }
 
-    /* =====================================================
-       DISCOUNT
-    ===================================================== */
-
     let discount:
       ResolvedDiscount;
 
@@ -529,8 +433,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            error instanceof
-              Error
+            error instanceof Error
               ? error.message
               : "Coupon is invalid.",
         },
@@ -543,45 +446,15 @@ export async function POST(
     const paddle =
       getPaddle();
 
-    /* =====================================================
-       EXISTING PADDLE TRANSACTION
-    ===================================================== */
-
     if (
       order.paddle_transaction_id
     ) {
       try {
-        /*
-         * Paddle allows a catalog discount
-         * to be applied to an unbilled
-         * transaction.
-         */
-        const updatedTransaction =
-          await paddle.transactions.update(
-            order.paddle_transaction_id,
-            {
-              discountId:
-                discount.discountId,
-            }
-          );
-
-        /*
-         * Useful log while testing.
-         */
-        console.log(
-          "Updated Paddle transaction discount:",
+        await paddle.transactions.update(
+          order.paddle_transaction_id,
           {
-            transactionId:
-              updatedTransaction.id,
-
-            requestedDiscountId:
+            discountId:
               discount.discountId,
-
-            transactionDiscountId:
-              updatedTransaction.discountId,
-
-            couponCode:
-              discount.code,
           }
         );
       } catch (error) {
@@ -612,20 +485,6 @@ export async function POST(
           discount
         );
 
-      console.log(
-        "Opening Paddle Hosted Checkout:",
-        {
-          transactionId:
-            order.paddle_transaction_id,
-
-          couponCode:
-            discount.code,
-
-          discountId:
-            discount.discountId,
-        }
-      );
-
       return checkoutResponse(
         {
           checkoutUrl,
@@ -643,10 +502,6 @@ export async function POST(
       );
     }
 
-    /* =====================================================
-       NEW PADDLE TRANSACTION
-    ===================================================== */
-
     const transaction =
       await paddle.transactions.create({
         items: [
@@ -657,8 +512,7 @@ export async function POST(
             quantity:
               Math.max(
                 Number(
-                  item.quantity ??
-                    1
+                  item.quantity ?? 1
                 ),
                 1
               ),
@@ -668,9 +522,6 @@ export async function POST(
         collectionMode:
           "automatic",
 
-        /*
-         * REAL Paddle discount.
-         */
         discountId:
           discount.discountId,
 
@@ -706,33 +557,6 @@ export async function POST(
       );
     }
 
-    /*
-     * Debug confirmation.
-     */
-    console.log(
-      "Created Paddle transaction:",
-      {
-        transactionId:
-          transaction.id,
-
-        requestedDiscountId:
-          discount.discountId,
-
-        transactionDiscountId:
-          transaction.discountId,
-
-        couponCode:
-          discount.code,
-      }
-    );
-
-    /*
-     * VERY IMPORTANT TEST:
-     *
-     * If a coupon was requested but Paddle
-     * didn't actually attach it, fail instead
-     * of silently charging full price.
-     */
     if (
       discount.discountId &&
       transaction.discountId !==
@@ -759,10 +583,6 @@ export async function POST(
         }
       );
     }
-
-    /* =====================================================
-       SAVE TRANSACTION
-    ===================================================== */
 
     const admin =
       createAdminClient();
@@ -818,10 +638,6 @@ export async function POST(
         }
       );
     }
-
-    /* =====================================================
-       HOSTED CHECKOUT
-    ===================================================== */
 
     const checkoutUrl =
       buildHostedCheckoutUrl(
