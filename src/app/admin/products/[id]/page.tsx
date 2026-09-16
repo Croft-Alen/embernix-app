@@ -9,12 +9,13 @@ import {
 
 import {
   notFound,
-  redirect,
 } from "next/navigation";
 
 import ProjectChat from "@/components/projects/ProjectChat";
 
-import ProjectRequirementsForm from "@/components/projects/ProjectRequirementsForm";
+import {
+  updateProject,
+} from "../actions";
 
 import {
   createAdminClient,
@@ -24,32 +25,11 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
-type ProjectPageProps = {
+type PageProps = {
   params: Promise<{
     id: string;
   }>;
 };
-
-function statusLabel(
-  status: string
-) {
-  switch (status) {
-    case "awaiting_requirements":
-      return "Awaiting requirements";
-
-    case "in_progress":
-      return "In progress";
-
-    case "completed":
-      return "Completed";
-
-    case "cancelled":
-      return "Cancelled";
-
-    default:
-      return status;
-  }
-}
 
 function formatFileSize(
   bytes:
@@ -85,9 +65,9 @@ function formatFileSize(
   ).toFixed(1)} MB`;
 }
 
-export default async function ProjectPage({
+export default async function AdminProjectPage({
   params,
-}: ProjectPageProps) {
+}: PageProps) {
   const {
     id,
   } =
@@ -104,11 +84,28 @@ export default async function ProjectPage({
     await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    notFound();
   }
 
   const admin =
     createAdminClient();
+
+  const {
+    data: adminUser,
+  } = await admin
+    .from(
+      "admin_users"
+    )
+    .select("user_id")
+    .eq(
+      "user_id",
+      user.id
+    )
+    .maybeSingle();
+
+  if (!adminUser) {
+    notFound();
+  }
 
   const {
     data: project,
@@ -122,17 +119,15 @@ export default async function ProjectPage({
       user_id,
       title,
       status,
+      admin_notes,
       invoice_id,
+      order_id,
       created_at,
       completed_at
     `)
     .eq(
       "id",
       id
-    )
-    .eq(
-      "user_id",
-      user.id
     )
     .maybeSingle();
 
@@ -225,93 +220,52 @@ export default async function ProjectPage({
       )
     );
 
+  const updateAction =
+    updateProject.bind(
+      null,
+      project.id
+    );
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-8">
       <Link
-        href="/projects"
-        className="inline-flex items-center gap-2 text-sm text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+        href="/admin/projects"
+        className="inline-flex items-center gap-2 text-sm text-[var(--muted)]"
       >
         <ArrowLeft className="h-4 w-4" />
 
         Projects
       </Link>
 
-      <div className="rounded-2xl border border-[var(--border)] bg-white p-6">
-        <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
-          <div>
-            <p className="text-xs font-medium text-[var(--muted)]">
-              {
-                project.project_number
-              }
-            </p>
+      <div>
+        <p className="text-xs text-[var(--muted)]">
+          {
+            project.project_number
+          }
+        </p>
 
-            <h1 className="mt-2 text-2xl font-semibold">
-              {
-                project.title
-              }
-            </h1>
-
-            <span className="mt-3 inline-flex rounded-full bg-[var(--primary-soft)] px-3 py-1 text-xs font-medium text-[var(--primary)]">
-              {statusLabel(
-                project.status
-              )}
-            </span>
-          </div>
-
-          <Link
-            href={`/invoices/${project.invoice_id}`}
-            className="text-sm font-medium text-[var(--primary)]"
-          >
-            View invoice
-          </Link>
-        </div>
+        <h1 className="mt-1 text-2xl font-semibold">
+          {
+            project.title
+          }
+        </h1>
       </div>
 
-      {project.status ===
-        "awaiting_requirements" ? (
-        /*
-         * IMPORTANT:
-         *
-         * Requirements stage has ONLY
-         * the requirements form.
-         *
-         * No chat box underneath.
-         */
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <ProjectRequirementsForm
-            projectId={
-              project.id
-            }
-          />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-6">
+          {requirements.length ===
+          0 ? (
+            <div className="rounded-2xl border border-[var(--border)] bg-white p-8 text-center">
+              <h2 className="font-semibold">
+                Awaiting customer requirements
+              </h2>
 
-          <aside className="h-fit rounded-2xl border border-[var(--border)] bg-white p-5 lg:sticky lg:top-24">
-            <p className="text-sm font-semibold">
-              Before we start
-            </p>
-
-            <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-              Submit the complete project brief and any relevant
-              files. Once submitted, the project will move into
-              progress and project chat will become available.
-            </p>
-
-            <div className="my-5 border-t border-[var(--border-light)]" />
-
-            <p className="text-xs text-[var(--muted)]">
-              Project created
-            </p>
-
-            <p className="mt-1 text-sm">
-              {new Date(
-                project.created_at
-              ).toLocaleDateString()}
-            </p>
-          </aside>
-        </div>
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="space-y-6">
-            {requirements.map(
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                The customer has not submitted the project brief yet.
+              </p>
+            </div>
+          ) : (
+            requirements.map(
               (
                 requirement,
                 index
@@ -348,26 +302,22 @@ export default async function ProjectPage({
                     }
                     className="rounded-2xl border border-[var(--border)] bg-white p-6"
                   >
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <h2 className="font-semibold">
-                          Requirements
-                          {requirements.length >
-                            1
-                            ? ` #${requirements.length - index}`
-                            : ""}
-                        </h2>
+                    <h2 className="font-semibold">
+                      Requirements
+                      {requirements.length >
+                        1
+                        ? ` #${requirements.length - index}`
+                        : ""}
+                    </h2>
 
-                        <p className="mt-1 text-xs text-[var(--muted)]">
-                          Submitted{" "}
-                          {new Date(
-                            requirement.submitted_at
-                          ).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      Submitted{" "}
+                      {new Date(
+                        requirement.submitted_at
+                      ).toLocaleString()}
+                    </p>
 
-                    <div className="mt-5">
+                    <div className="mt-6">
                       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
                         Project brief
                       </p>
@@ -383,7 +333,7 @@ export default async function ProjectPage({
                       0 && (
                       <div className="mt-6">
                         <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-                          References
+                          Reference URLs
                         </p>
 
                         <div className="mt-2 space-y-2">
@@ -406,7 +356,7 @@ export default async function ProjectPage({
                                   url
                                 }
 
-                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                                <ExternalLink className="h-3.5 w-3.5" />
                               </a>
                             )
                           )}
@@ -436,7 +386,7 @@ export default async function ProjectPage({
                                 }
                                 target="_blank"
                                 rel="noreferrer"
-                                className="flex items-center gap-3 rounded-xl border border-[var(--border)] px-3 py-2.5 transition-colors hover:bg-[var(--surface-hover)]"
+                                className="flex items-center gap-3 rounded-xl border border-[var(--border)] px-3 py-2.5 hover:bg-[var(--surface-hover)]"
                               >
                                 <File className="h-4 w-4 shrink-0" />
 
@@ -484,7 +434,7 @@ export default async function ProjectPage({
                                 }
                                 target="_blank"
                                 rel="noreferrer"
-                                className="flex items-center gap-3 rounded-xl border border-[var(--border)] px-3 py-2.5 transition-colors hover:bg-[var(--surface-hover)]"
+                                className="flex items-center gap-3 rounded-xl border border-[var(--border)] px-3 py-2.5 hover:bg-[var(--surface-hover)]"
                               >
                                 <File className="h-4 w-4 shrink-0" />
 
@@ -526,8 +476,11 @@ export default async function ProjectPage({
                   </div>
                 );
               }
-            )}
+            )
+          )}
 
+          {project.status !==
+            "awaiting_requirements" && (
             <ProjectChat
               projectId={
                 project.id
@@ -540,46 +493,92 @@ export default async function ProjectPage({
                 "cancelled"
               }
             />
-          </div>
+          )}
+        </div>
 
-          <aside className="h-fit rounded-2xl border border-[var(--border)] bg-white p-5 lg:sticky lg:top-24">
-            <p className="text-xs text-[var(--muted)]">
-              Status
-            </p>
+        <form
+          action={
+            updateAction
+          }
+          className="h-fit rounded-2xl border border-[var(--border)] bg-white p-5 lg:sticky lg:top-24"
+        >
+          <label className="text-sm font-medium">
+            Status
+          </label>
 
-            <p className="mt-1 text-sm font-medium">
-              {statusLabel(
-                project.status
-              )}
-            </p>
+          <select
+            name="status"
+            defaultValue={
+              project.status
+            }
+            className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm"
+          >
+            <option value="awaiting_requirements">
+              Awaiting requirements
+            </option>
 
-            <div className="my-5 border-t border-[var(--border-light)]" />
+            <option value="in_progress">
+              In progress
+            </option>
 
+            <option value="completed">
+              Completed
+            </option>
+
+            <option value="cancelled">
+              Cancelled
+            </option>
+          </select>
+
+          <label className="mt-5 block text-sm font-medium">
+            Internal notes
+          </label>
+
+          <textarea
+            name="adminNotes"
+            rows={7}
+            defaultValue={
+              project.admin_notes ??
+              ""
+            }
+            placeholder="Internal Embernix notes..."
+            className="mt-2 w-full resize-y rounded-xl border border-[var(--border)] px-3 py-3 text-sm outline-none focus:border-[var(--primary)]"
+          />
+
+          <button
+            type="submit"
+            className="mt-5 h-11 w-full rounded-xl bg-[var(--primary)] text-sm font-semibold text-white"
+          >
+            Save project
+          </button>
+
+          <div className="my-5 border-t border-[var(--border-light)]" />
+
+          <p className="text-xs text-[var(--muted)]">
+            Order
+          </p>
+
+          <Link
+            href={`/admin/orders/${project.order_id}`}
+            className="mt-1 block text-sm font-medium text-[var(--primary)]"
+          >
+            View order
+          </Link>
+
+          <div className="mt-4">
             <p className="text-xs text-[var(--muted)]">
               Invoice
             </p>
 
             <Link
-              href={`/invoices/${project.invoice_id}`}
-              className="mt-1 inline-block text-sm font-medium text-[var(--primary)]"
+              href={`/admin/invoices/${project.invoice_id}`}
+              className="mt-1 block text-sm font-medium text-[var(--primary)]"
             >
               View invoice
             </Link>
-
-            <div className="my-5 border-t border-[var(--border-light)]" />
-
-            <p className="text-xs text-[var(--muted)]">
-              Created
-            </p>
-
-            <p className="mt-1 text-sm">
-              {new Date(
-                project.created_at
-              ).toLocaleDateString()}
-            </p>
-          </aside>
-        </div>
-      )}
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
