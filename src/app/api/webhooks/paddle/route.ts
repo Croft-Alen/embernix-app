@@ -11,6 +11,10 @@ import {
   getPaddle,
 } from "@/lib/paddle/server";
 
+import {
+  createServiceProject,
+} from "@/lib/projects/create-service-project";
+
 export const runtime =
   "nodejs";
 
@@ -144,6 +148,9 @@ export async function POST(
           invoice_number,
           user_id,
           status,
+          currency,
+          subtotal_cents,
+          total_cents,
           paddle_transaction_id
         `)
         .eq(
@@ -164,6 +171,9 @@ export async function POST(
               invoice_number,
               user_id,
               status,
+              currency,
+              subtotal_cents,
+              total_cents,
               paddle_transaction_id
             `)
             .eq(
@@ -183,6 +193,15 @@ export async function POST(
         invoiceError ||
         !invoice
       ) {
+        console.error(
+          "Paddle webhook could not find invoice:",
+          {
+            transactionId,
+            customInvoiceId,
+            invoiceError,
+          }
+        );
+
         return NextResponse.json(
           {
             error:
@@ -190,6 +209,39 @@ export async function POST(
           },
           {
             status: 500,
+          }
+        );
+      }
+
+      if (
+        invoice
+          .paddle_transaction_id &&
+        invoice
+          .paddle_transaction_id !==
+          transactionId
+      ) {
+        console.error(
+          "Invoice Paddle transaction mismatch:",
+          {
+            invoiceId:
+              invoice.id,
+
+            stored:
+              invoice
+                .paddle_transaction_id,
+
+            received:
+              transactionId,
+          }
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Transaction mismatch.",
+          },
+          {
+            status: 409,
           }
         );
       }
@@ -300,7 +352,7 @@ export async function POST(
 
       if (updateError) {
         console.error(
-          "Failed finalizing direct invoice:",
+          "Failed finalizing invoice:",
           updateError
         );
 
@@ -411,6 +463,39 @@ export async function POST(
       );
     }
 
+    if (
+      order
+        .paddle_transaction_id &&
+      order
+        .paddle_transaction_id !==
+        transactionId
+    ) {
+      console.error(
+        "Order Paddle transaction mismatch:",
+        {
+          orderId:
+            order.id,
+
+          stored:
+            order
+              .paddle_transaction_id,
+
+          received:
+            transactionId,
+        }
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Transaction mismatch.",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
     const {
       data: item,
       error:
@@ -421,7 +506,10 @@ export async function POST(
         id,
         item_type,
         product_id,
-        service_id
+        service_id,
+        product_name,
+        unit_price_cents,
+        quantity
       `)
       .eq(
         "order_id",
@@ -434,6 +522,11 @@ export async function POST(
       itemError ||
       !item
     ) {
+      console.error(
+        "Paid order has no order item:",
+        itemError
+      );
+
       return NextResponse.json(
         {
           error:
@@ -477,7 +570,7 @@ export async function POST(
 
     /*
      * ======================================
-     * PRODUCT
+     * PRODUCT FULFILLMENT
      * ======================================
      */
     if (
@@ -487,6 +580,11 @@ export async function POST(
       if (
         !item.product_id
       ) {
+        console.error(
+          "Paid product order has no product_id:",
+          order.id
+        );
+
         return NextResponse.json(
           {
             error:
@@ -550,13 +648,32 @@ export async function POST(
 
     /*
      * ======================================
-     * SERVICE
+     * SERVICE FULFILLMENT
      * ======================================
      */
     else if (
       itemType ===
       "service"
     ) {
+      if (
+        !item.service_id
+      ) {
+        console.error(
+          "Paid service order has no service_id:",
+          order.id
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Service information missing.",
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+
       const customInvoiceId =
         typeof customData
           .embernix_invoice_id ===
@@ -565,34 +682,53 @@ export async function POST(
               .embernix_invoice_id
           : null;
 
-      let invoiceQuery =
-        admin
-          .from("invoices")
-          .select(`
-            id,
-            status,
-            order_id,
-            service_id,
-            paddle_transaction_id
-          `);
-
-      const {
+      let {
         data: invoice,
         error:
           invoiceError,
-      } = customInvoiceId
-        ? await invoiceQuery
+      } = await admin
+        .from("invoices")
+        .select(`
+          id,
+          status,
+          order_id,
+          service_id,
+          user_id,
+          paddle_transaction_id
+        `)
+        .eq(
+          "order_id",
+          order.id
+        )
+        .maybeSingle();
+
+      if (
+        !invoice &&
+        customInvoiceId
+      ) {
+        const recovery =
+          await admin
+            .from("invoices")
+            .select(`
+              id,
+              status,
+              order_id,
+              service_id,
+              user_id,
+              paddle_transaction_id
+            `)
             .eq(
               "id",
               customInvoiceId
             )
-            .maybeSingle()
-        : await invoiceQuery
-            .eq(
-              "order_id",
-              order.id
-            )
             .maybeSingle();
+
+        invoice =
+          recovery.data;
+
+        invoiceError =
+          recovery.error;
+      }
 
       if (
         invoiceError ||
@@ -621,9 +757,13 @@ export async function POST(
         );
       }
 
+      /*
+       * Mark the already-existing unpaid
+       * service invoice as paid.
+       */
       if (
         invoice.status !==
-          "paid"
+        "paid"
       ) {
         const invoiceUpdate:
           Record<
@@ -712,7 +852,99 @@ export async function POST(
           );
         }
       }
+
+      /*
+       * Load canonical service.
+       */
+      const {
+        data: service,
+        error:
+          serviceError,
+      } = await admin
+        .from("services")
+        .select(`
+          id,
+          name
+        `)
+        .eq(
+          "id",
+          item.service_id
+        )
+        .maybeSingle();
+
+      if (
+        serviceError ||
+        !service
+      ) {
+        console.error(
+          "Paid service project could not load service:",
+          serviceError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Service project creation failed.",
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+
+      /*
+       * Create project ONLY after confirmed
+       * service payment.
+       *
+       * The helper is idempotent using order_id,
+       * so webhook retries cannot create duplicates.
+       */
+      try {
+        await createServiceProject({
+          orderId:
+            order.id,
+
+          invoiceId:
+            invoice.id,
+
+          userId:
+            order.user_id,
+
+          serviceId:
+            service.id,
+
+          serviceName:
+            service.name,
+        });
+      } catch (
+        projectError
+      ) {
+        console.error(
+          "Failed creating project after service payment:",
+          projectError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Project creation failed.",
+          },
+          {
+            status: 500,
+          }
+        );
+      }
     } else {
+      console.error(
+        "Unsupported paid order item type:",
+        {
+          orderId:
+            order.id,
+
+          itemType,
+        }
+      );
+
       return NextResponse.json(
         {
           error:
@@ -726,7 +958,7 @@ export async function POST(
 
     /*
      * ======================================
-     * FINALIZE ORDER
+     * FINALIZE CENTRAL ORDER
      * ======================================
      */
 

@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+
+import {
+  usePathname,
+} from "next/navigation";
+
 import {
   Box,
   FileText,
@@ -12,37 +16,46 @@ import {
   X,
 } from "lucide-react";
 
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  createClient,
+} from "@/lib/supabase/client";
+
 type ClientSidebarProps = {
   mobileOpen?: boolean;
   onClose?: () => void;
 };
 
-const navigation = [
+const baseNavigation = [
   {
     label: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
   },
+
   {
     label: "Products",
     href: "/products",
     icon: Package,
   },
-  {
-    label: "Projects",
-    href: "/projects",
-    icon: Box,
-  },
+
   {
     label: "Orders",
     href: "/orders",
     icon: ReceiptText,
   },
+
   {
     label: "Invoices",
     href: "/invoices",
     icon: FileText,
   },
+
   {
     label: "Support",
     href: "/tickets",
@@ -54,7 +67,178 @@ export default function ClientSidebar({
   mobileOpen = false,
   onClose,
 }: ClientSidebarProps) {
-  const pathname = usePathname();
+  const pathname =
+    usePathname();
+
+  const [
+    hasProjects,
+    setHasProjects,
+  ] = useState(false);
+
+  const [
+    projectsLoaded,
+    setProjectsLoaded,
+  ] = useState(false);
+
+  useEffect(() => {
+    let cancelled =
+      false;
+
+    async function checkProjects() {
+      try {
+        const supabase =
+          createClient();
+
+        const {
+          data: {
+            user,
+          },
+        } =
+          await supabase.auth.getUser();
+
+        if (
+          cancelled
+        ) {
+          return;
+        }
+
+        if (!user) {
+          setHasProjects(
+            false
+          );
+
+          setProjectsLoaded(
+            true
+          );
+
+          return;
+        }
+
+        /*
+         * projects has RLS:
+         * customer can only read their own projects.
+         *
+         * Projects themselves only exist after
+         * successful service payment.
+         */
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("projects")
+          .select("id")
+          .eq(
+            "user_id",
+            user.id
+          )
+          .limit(1);
+
+        if (
+          cancelled
+        ) {
+          return;
+        }
+
+        if (error) {
+          console.error(
+            "Failed checking client projects:",
+            error
+          );
+
+          setHasProjects(
+            false
+          );
+
+          setProjectsLoaded(
+            true
+          );
+
+          return;
+        }
+
+        setHasProjects(
+          Boolean(
+            data &&
+              data.length >
+                0
+          )
+        );
+
+        setProjectsLoaded(
+          true
+        );
+      } catch (error) {
+        console.error(
+          "Client project visibility check failed:",
+          error
+        );
+
+        if (
+          !cancelled
+        ) {
+          setHasProjects(
+            false
+          );
+
+          setProjectsLoaded(
+            true
+          );
+        }
+      }
+    }
+
+    void checkProjects();
+
+    return () => {
+      cancelled =
+        true;
+    };
+  }, [
+    pathname,
+  ]);
+
+  const navigation =
+    useMemo(
+      () => {
+        const items =
+          [
+            ...baseNavigation,
+          ];
+
+        /*
+         * Insert Projects directly
+         * after Products.
+         *
+         * Only paid-service customers
+         * will have a project row.
+         */
+        if (
+          projectsLoaded &&
+          hasProjects
+        ) {
+          items.splice(
+            2,
+            0,
+            {
+              label:
+                "Projects",
+
+              href:
+                "/projects",
+
+              icon:
+                Box,
+            }
+          );
+        }
+
+        return items;
+      },
+      [
+        hasProjects,
+        projectsLoaded,
+      ]
+    );
 
   return (
     <>
@@ -62,7 +246,9 @@ export default function ClientSidebar({
         <button
           type="button"
           aria-label="Close navigation"
-          onClick={onClose}
+          onClick={
+            onClose
+          }
           className="fixed inset-0 z-40 bg-black/30 lg:hidden"
         />
       )}
@@ -71,11 +257,18 @@ export default function ClientSidebar({
         className={`
           fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col
           transition-transform duration-200 lg:translate-x-0
-          ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
+          ${
+            mobileOpen
+              ? "translate-x-0"
+              : "-translate-x-full"
+          }
         `}
         style={{
-          background: "var(--sidebar)",
-          color: "var(--sidebar-foreground)",
+          background:
+            "var(--sidebar)",
+
+          color:
+            "var(--sidebar-foreground)",
         }}
       >
         <div className="flex h-[72px] items-center justify-between px-5">
@@ -86,8 +279,12 @@ export default function ClientSidebar({
             <div
               className="flex h-10 w-10 items-center justify-center rounded-[12px] text-sm font-bold text-white"
               style={{
-                background: "var(--primary)",
-                border: "1px solid var(--primary-hover)",
+                background:
+                  "var(--primary)",
+
+                border:
+                  "1px solid var(--primary-hover)",
+
                 boxShadow:
                   "inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 14px rgba(37,99,235,0.2)",
               }}
@@ -103,7 +300,8 @@ export default function ClientSidebar({
               <p
                 className="mt-0.5 text-[11px]"
                 style={{
-                  color: "rgba(255,255,255,0.48)",
+                  color:
+                    "rgba(255,255,255,0.48)",
                 }}
               >
                 Client Portal
@@ -113,20 +311,27 @@ export default function ClientSidebar({
 
           <button
             type="button"
-            onClick={onClose}
+            aria-label="Close navigation"
+            onClick={
+              onClose
+            }
             className="flex h-9 w-9 items-center justify-center rounded-[10px] lg:hidden"
             style={{
-              color: "rgba(255,255,255,0.7)",
+              color:
+                "rgba(255,255,255,0.7)",
             }}
           >
-            <X size={19} />
+            <X
+              size={19}
+            />
           </button>
         </div>
 
         <div
           className="mx-5 h-px"
           style={{
-            background: "rgba(255,255,255,0.08)",
+            background:
+              "rgba(255,255,255,0.08)",
           }}
         />
 
@@ -134,51 +339,85 @@ export default function ClientSidebar({
           <p
             className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em]"
             style={{
-              color: "rgba(255,255,255,0.36)",
+              color:
+                "rgba(255,255,255,0.36)",
             }}
           >
             Workspace
           </p>
 
           <div className="space-y-1">
-            {navigation.map((item) => {
-              const Icon = item.icon;
+            {navigation.map(
+              (
+                item
+              ) => {
+                const Icon =
+                  item.icon;
 
-              const active =
-                pathname === item.href ||
-                (item.href !== "/dashboard" &&
-                  pathname.startsWith(`${item.href}/`));
+                const active =
+                  pathname ===
+                    item.href ||
+                  (
+                    item.href !==
+                      "/dashboard" &&
+                    pathname.startsWith(
+                      `${item.href}/`
+                    )
+                  );
 
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className="flex h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-medium transition-colors"
-                  style={
-                    active
-                      ? {
-                          background: "rgba(255,255,255,0.10)",
-                          color: "#ffffff",
-                        }
-                      : {
-                          color: "rgba(255,255,255,0.62)",
-                        }
-                  }
-                >
-                  <Icon size={18} strokeWidth={2} />
+                return (
+                  <Link
+                    key={
+                      item.href
+                    }
+                    href={
+                      item.href
+                    }
+                    onClick={
+                      onClose
+                    }
+                    className="flex h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-medium transition-colors"
+                    style={
+                      active
+                        ? {
+                            background:
+                              "rgba(255,255,255,0.10)",
 
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
+                            color:
+                              "#ffffff",
+                          }
+                        : {
+                            color:
+                              "rgba(255,255,255,0.62)",
+                          }
+                    }
+                  >
+                    <Icon
+                      size={
+                        18
+                      }
+                      strokeWidth={
+                        2
+                      }
+                    />
+
+                    <span>
+                      {
+                        item.label
+                      }
+                    </span>
+                  </Link>
+                );
+              }
+            )}
           </div>
         </nav>
 
         <div
           className="mx-5 h-px"
           style={{
-            background: "rgba(255,255,255,0.08)",
+            background:
+              "rgba(255,255,255,0.08)",
           }}
         />
 
@@ -186,10 +425,13 @@ export default function ClientSidebar({
           <p
             className="text-xs leading-5"
             style={{
-              color: "rgba(255,255,255,0.38)",
+              color:
+                "rgba(255,255,255,0.38)",
             }}
           >
-            © {new Date().getFullYear()} Embernix
+            Â©{" "}
+            {new Date().getFullYear()}{" "}
+            Embernix
           </p>
         </div>
       </aside>
