@@ -68,10 +68,21 @@ export default async function EditServicePage({
     )
     .maybeSingle();
 
-  if (
-    error ||
-    !service
-  ) {
+  if (error) {
+    console.error(
+      "Failed to load service:",
+      error
+    );
+
+    notFound();
+  }
+
+  if (!service) {
+    console.error(
+      "Service not found:",
+      id
+    );
+
     notFound();
   }
 
@@ -101,9 +112,7 @@ export default async function EditServicePage({
           <p className="mt-1 text-sm text-[var(--muted)]">
             Update{" "}
             <span className="font-medium text-[var(--foreground)]">
-              {
-                service.name
-              }
+              {service.name}
             </span>
             .
           </p>
@@ -112,9 +121,7 @@ export default async function EditServicePage({
 
       {query.error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {
-            query.error
-          }
+          {query.error}
         </div>
       )}
 
