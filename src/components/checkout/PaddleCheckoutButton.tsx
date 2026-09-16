@@ -13,13 +13,24 @@ import {
 import {
   prepareCheckoutOrder,
   type CheckoutItemType,
+  type ServiceBillingInput,
 } from "@/app/checkout/actions";
 
 type PaddleCheckoutButtonProps = {
-  itemType: CheckoutItemType;
+  itemType:
+    CheckoutItemType;
+
   itemSlug: string;
+
   acceptedTerms: boolean;
-  couponCode?: string | null;
+
+  couponCode?:
+    | string
+    | null;
+
+  billing:
+    | ServiceBillingInput
+    | null;
 };
 
 export default function PaddleCheckoutButton({
@@ -27,6 +38,7 @@ export default function PaddleCheckoutButton({
   itemSlug,
   acceptedTerms,
   couponCode,
+  billing,
 }: PaddleCheckoutButtonProps) {
   const [
     loading,
@@ -54,6 +66,43 @@ export default function PaddleCheckoutButton({
       return;
     }
 
+    if (
+      itemType ===
+      "service"
+    ) {
+      if (
+        !billing
+          ?.addressLine1
+          .trim()
+      ) {
+        setError(
+          "Please enter your billing address."
+        );
+
+        return;
+      }
+
+      if (
+        !billing.city.trim()
+      ) {
+        setError(
+          "Please enter your billing city."
+        );
+
+        return;
+      }
+
+      if (
+        !billing.country.trim()
+      ) {
+        setError(
+          "Please enter your billing country."
+        );
+
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
 
@@ -62,14 +111,19 @@ export default function PaddleCheckoutButton({
         await prepareCheckoutOrder(
           itemType,
           itemSlug,
-          acceptedTerms
+          acceptedTerms,
+          itemType ===
+          "service"
+            ? billing
+            : null
         );
 
       if (
         !preparation.success
       ) {
         if (
-          preparation.ownedProductId
+          preparation
+            .ownedProductId
         ) {
           window.location.href =
             `/products/${preparation.ownedProductId}`;
@@ -95,7 +149,8 @@ export default function PaddleCheckoutButton({
         await fetch(
           "/api/checkout/paddle",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -115,16 +170,23 @@ export default function PaddleCheckoutButton({
 
       const data =
         (await response.json()) as {
-          checkoutUrl?: string;
-          transactionId?: string;
+          checkoutUrl?:
+            string;
+
+          transactionId?:
+            string;
+
           couponCode?:
-            | string
-            | null;
+            string | null;
+
           discountId?:
-            | string
-            | null;
-          alreadyPaid?: boolean;
-          error?: string;
+            string | null;
+
+          alreadyPaid?:
+            boolean;
+
+          error?:
+            string;
         };
 
       if (
@@ -165,7 +227,9 @@ export default function PaddleCheckoutButton({
           : "Unable to start checkout."
       );
 
-      setLoading(false);
+      setLoading(
+        false
+      );
     }
   }
 

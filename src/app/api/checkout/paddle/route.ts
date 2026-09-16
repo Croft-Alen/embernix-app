@@ -15,21 +15,25 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
-export const runtime = "nodejs";
+export const runtime =
+  "nodejs";
 
 type CheckoutRequest = {
   orderNumber?: string;
-  couponCode?: string | null;
+  couponCode?:
+    | string
+    | null;
 };
 
 type ResolvedDiscount = {
-  discountId: string | null;
-  code: string | null;
-};
+  discountId:
+    | string
+    | null;
 
-type CheckoutItemType =
-  | "product"
-  | "service";
+  code:
+    | string
+    | null;
+};
 
 function normalizeCode(
   value:
@@ -120,7 +124,8 @@ function checkoutResponse(
       secure: true,
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60,
+      maxAge:
+        60 * 60,
     }
   );
 
@@ -141,8 +146,11 @@ async function resolveDiscount(
 
   if (!code) {
     return {
-      discountId: null,
-      code: null,
+      discountId:
+        null,
+
+      code:
+        null,
     };
   }
 
@@ -186,7 +194,8 @@ async function resolveDiscount(
   }
 
   if (
-    !coupon.paddle_discount_id
+    !coupon
+      .paddle_discount_id
   ) {
     throw new Error(
       "This coupon is not connected to Paddle."
@@ -221,9 +230,7 @@ async function resolveDiscount(
       coupon.currency ??
         ""
     ).toUpperCase() !==
-      String(
-        currency
-      ).toUpperCase()
+      currency.toUpperCase()
   ) {
     throw new Error(
       "This coupon cannot be used with this currency."
@@ -275,7 +282,8 @@ export async function POST(
         | null;
 
     const orderNumber =
-      body?.orderNumber?.trim();
+      body?.orderNumber
+        ?.trim();
 
     if (!orderNumber) {
       return NextResponse.json(
@@ -305,8 +313,6 @@ export async function POST(
         status,
         payment_status,
         currency,
-        subtotal_cents,
-        total_cents,
         customer_email,
         paddle_transaction_id
       `)
@@ -408,33 +414,11 @@ export async function POST(
       String(
         item.item_type ??
           "product"
-      ) as CheckoutItemType;
-
-    if (
-      itemType !==
-        "product" &&
-      itemType !==
-        "service"
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Unsupported checkout item.",
-        },
-        {
-          status: 400,
-        }
       );
-    }
 
     const paddle =
       getPaddle();
 
-    /*
-     * ======================================
-     * PRODUCT CHECKOUT
-     * ======================================
-     */
     if (
       itemType ===
       "product"
@@ -487,7 +471,8 @@ export async function POST(
       }
 
       if (
-        !product.paddle_price_id
+        !product
+          .paddle_price_id
       ) {
         return NextResponse.json(
           {
@@ -524,74 +509,60 @@ export async function POST(
         );
       }
 
+      const customData = {
+        embernix_payment_type:
+          "order",
+
+        embernix_item_type:
+          "product",
+
+        embernix_order_id:
+          order.id,
+
+        embernix_order_number:
+          order.order_number,
+
+        embernix_user_id:
+          user.id,
+
+        embernix_product_id:
+          product.id,
+
+        embernix_coupon_code:
+          discount.code,
+      };
+
       if (
-        order.paddle_transaction_id
+        order
+          .paddle_transaction_id
       ) {
-        try {
-          await paddle.transactions.update(
-            order.paddle_transaction_id,
-            {
-              discountId:
-                discount.discountId,
+        await paddle.transactions.update(
+          order.paddle_transaction_id,
+          {
+            discountId:
+              discount.discountId,
 
-              customData: {
-                embernix_payment_type:
-                  "order",
-
-                embernix_item_type:
-                  "product",
-
-                embernix_order_id:
-                  order.id,
-
-                embernix_order_number:
-                  order.order_number,
-
-                embernix_user_id:
-                  user.id,
-
-                embernix_product_id:
-                  product.id,
-
-                embernix_coupon_code:
-                  discount.code,
-              },
-            } as never
-          );
-        } catch (error) {
-          console.error(
-            "Failed to update Paddle product transaction:",
-            error
-          );
-
-          return NextResponse.json(
-            {
-              error:
-                "Unable to update Paddle checkout.",
-            },
-            {
-              status: 400,
-            }
-          );
-        }
-
-        const checkoutUrl =
-          buildHostedCheckoutUrl(
-            order.paddle_transaction_id,
-
-            order.customer_email ??
-              user.email ??
-              "",
-
-            discount
-          );
+            customData,
+          } as never
+        );
 
         return checkoutResponse(
           {
-            checkoutUrl,
+            checkoutUrl:
+              buildHostedCheckoutUrl(
+                order
+                  .paddle_transaction_id,
+
+                order.customer_email ??
+                  user.email ??
+                  "",
+
+                discount
+              ),
 
             transactionId:
-              order.paddle_transaction_id,
+              order
+                .paddle_transaction_id,
 
             couponCode:
               discount.code,
@@ -609,7 +580,8 @@ export async function POST(
             items: [
               {
                 priceId:
-                  product.paddle_price_id,
+                  product
+                    .paddle_price_id,
 
                 quantity:
                   Math.max(
@@ -628,28 +600,7 @@ export async function POST(
             discountId:
               discount.discountId,
 
-            customData: {
-              embernix_payment_type:
-                "order",
-
-              embernix_item_type:
-                "product",
-
-              embernix_order_id:
-                order.id,
-
-              embernix_order_number:
-                order.order_number,
-
-              embernix_user_id:
-                user.id,
-
-              embernix_product_id:
-                product.id,
-
-              embernix_coupon_code:
-                discount.code,
-            },
+            customData,
           } as never
         );
 
@@ -667,36 +618,7 @@ export async function POST(
         );
       }
 
-      if (
-        discount.discountId &&
-        transaction.discountId !==
-          discount.discountId
-      ) {
-        console.error(
-          "Paddle transaction was created without expected discount.",
-          {
-            expected:
-              discount.discountId,
-
-            received:
-              transaction.discountId,
-          }
-        );
-
-        return NextResponse.json(
-          {
-            error:
-              "Paddle did not apply the selected coupon. Checkout was stopped.",
-          },
-          {
-            status: 502,
-          }
-        );
-      }
-
       const {
-        data:
-          updatedOrder,
         error:
           updateError,
       } = await admin
@@ -717,20 +639,11 @@ export async function POST(
         .eq(
           "id",
           order.id
-        )
-        .eq(
-          "payment_status",
-          "unpaid"
-        )
-        .select("id")
-        .maybeSingle();
+        );
 
-      if (
-        updateError ||
-        !updatedOrder
-      ) {
+      if (updateError) {
         console.error(
-          "Failed to save Paddle transaction:",
+          "Failed saving Paddle transaction:",
           updateError
         );
 
@@ -745,20 +658,18 @@ export async function POST(
         );
       }
 
-      const checkoutUrl =
-        buildHostedCheckoutUrl(
-          transaction.id,
-
-          order.customer_email ??
-            user.email ??
-            "",
-
-          discount
-        );
-
       return checkoutResponse(
         {
-          checkoutUrl,
+          checkoutUrl:
+            buildHostedCheckoutUrl(
+              transaction.id,
+
+              order.customer_email ??
+                user.email ??
+                "",
+
+              discount
+            ),
 
           transactionId:
             transaction.id,
@@ -773,19 +684,15 @@ export async function POST(
       );
     }
 
-    /*
-     * ======================================
-     * SERVICE CHECKOUT
-     * ======================================
-     */
-
     if (
+      itemType !==
+      "service" ||
       !item.service_id
     ) {
       return NextResponse.json(
         {
           error:
-            "Service information is missing.",
+            "Unsupported checkout item.",
         },
         {
           status: 400,
@@ -803,8 +710,7 @@ export async function POST(
         id,
         name,
         short_description,
-        active,
-        currency
+        active
       `)
       .eq(
         "id",
@@ -827,51 +733,37 @@ export async function POST(
       );
     }
 
-    if (!service.active) {
-      return NextResponse.json(
-        {
-          error:
-            "This service is no longer available.",
-        },
-        {
-          status: 409,
-        }
-      );
-    }
-
-    /*
-     * Coupons are currently product-only.
-     */
-    const noDiscount:
-      ResolvedDiscount = {
-      discountId: null,
-      code: null,
-    };
-
-    const unitPrice =
-      Number(
-        item.unit_price_cents
-      );
-
-    const quantity =
-      Math.max(
-        Number(
-          item.quantity ??
-            1
-        ),
-        1
-      );
+    const {
+      data: invoice,
+      error:
+        invoiceError,
+    } = await admin
+      .from("invoices")
+      .select(`
+        id,
+        invoice_number,
+        status,
+        total_cents
+      `)
+      .eq(
+        "order_id",
+        order.id
+      )
+      .maybeSingle();
 
     if (
-      !Number.isFinite(
-        unitPrice
-      ) ||
-      unitPrice <= 0
+      invoiceError ||
+      !invoice
     ) {
+      console.error(
+        "Service checkout invoice missing:",
+        invoiceError
+      );
+
       return NextResponse.json(
         {
           error:
-            "Service price is invalid.",
+            "Service invoice was not found.",
         },
         {
           status: 400,
@@ -879,128 +771,130 @@ export async function POST(
       );
     }
 
-    const serviceTransactionItem =
-      {
-        quantity,
+    if (
+      invoice.status !==
+      "unpaid"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "This service invoice cannot currently be paid.",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
 
-        price: {
+    const transactionItem = {
+      quantity:
+        1,
+
+      price: {
+        name:
+          service.name,
+
+        description:
+          service.short_description ||
+          service.name,
+
+        billingCycle:
+          null,
+
+        trialPeriod:
+          null,
+
+        taxMode:
+          "internal",
+
+        unitPrice: {
+          amount:
+            String(
+              invoice.total_cents
+            ),
+
+          currencyCode:
+            order.currency,
+        },
+
+        product: {
           name:
             service.name,
 
           description:
             service.short_description ||
-            `Embernix ${service.name}`,
+            "Embernix professional service",
 
-          billingCycle:
-            null,
-
-          trialPeriod:
-            null,
-
-          taxMode:
-            "internal",
-
-          unitPrice: {
-            amount:
-              String(
-                unitPrice
-              ),
-
-            currencyCode:
-              order.currency,
-          },
-
-          product: {
-            name:
-              service.name,
-
-            description:
-              service.short_description ||
-              "Embernix professional service",
-
-            taxCategory:
-              "standard",
-          },
+          taxCategory:
+            "standard",
         },
-      };
+      },
+    };
 
-    const serviceCustomData =
-      {
-        embernix_payment_type:
-          "order",
+    const customData = {
+      embernix_payment_type:
+        "order",
 
-        embernix_item_type:
-          "service",
+      embernix_item_type:
+        "service",
 
-        embernix_order_id:
-          order.id,
+      embernix_order_id:
+        order.id,
 
-        embernix_order_number:
-          order.order_number,
+      embernix_order_number:
+        order.order_number,
 
-        embernix_user_id:
-          user.id,
+      embernix_user_id:
+        user.id,
 
-        embernix_service_id:
-          service.id,
-      };
+      embernix_service_id:
+        service.id,
 
-    /*
-     * Reuse existing Paddle transaction.
-     */
+      embernix_invoice_id:
+        invoice.id,
+
+      embernix_invoice_number:
+        invoice.invoice_number,
+    };
+
     if (
-      order.paddle_transaction_id
+      order
+        .paddle_transaction_id
     ) {
-      try {
-        await paddle.transactions.update(
-          order.paddle_transaction_id,
-          {
-            items: [
-              serviceTransactionItem,
-            ],
+      await paddle.transactions.update(
+        order.paddle_transaction_id,
+        {
+          items: [
+            transactionItem,
+          ],
 
-            customData:
-              serviceCustomData,
-          } as never
-        );
-      } catch (error) {
-        console.error(
-          "Failed to reuse service Paddle transaction:",
-          error
-        );
-
-        return NextResponse.json(
-          {
-            error:
-              "Unable to prepare service checkout.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-
-      const checkoutUrl =
-        buildHostedCheckoutUrl(
-          order.paddle_transaction_id,
-
-          order.customer_email ??
-            user.email ??
-            "",
-
-          noDiscount
-        );
+          customData,
+        } as never
+      );
 
       return checkoutResponse(
         {
-          checkoutUrl,
+          checkoutUrl:
+            buildHostedCheckoutUrl(
+              order
+                .paddle_transaction_id,
+
+              order.customer_email ??
+                user.email ??
+                "",
+
+              {
+                discountId:
+                  null,
+
+                code:
+                  null,
+              }
+            ),
 
           transactionId:
-            order.paddle_transaction_id,
-
-          couponCode: null,
-
-          discountId: null,
+            order
+              .paddle_transaction_id,
         },
         order.order_number
       );
@@ -1010,14 +904,13 @@ export async function POST(
       await paddle.transactions.create(
         {
           items: [
-            serviceTransactionItem,
+            transactionItem,
           ],
 
           collectionMode:
             "automatic",
 
-          customData:
-            serviceCustomData,
+          customData,
         } as never
       );
 
@@ -1035,11 +928,12 @@ export async function POST(
       );
     }
 
+    const now =
+      new Date().toISOString();
+
     const {
-      data:
-        updatedOrder,
       error:
-        updateError,
+        orderUpdateError,
     } = await admin
       .from("orders")
       .update({
@@ -1053,28 +947,16 @@ export async function POST(
           transaction.id,
 
         updated_at:
-          new Date().toISOString(),
+          now,
       })
       .eq(
         "id",
         order.id
-      )
-      .eq(
-        "payment_status",
-        "unpaid"
-      )
-      .select("id")
-      .maybeSingle();
-
-    if (
-      updateError ||
-      !updatedOrder
-    ) {
-      console.error(
-        "Failed to save service Paddle transaction:",
-        updateError
       );
 
+    if (
+      orderUpdateError
+    ) {
       return NextResponse.json(
         {
           error:
@@ -1086,27 +968,70 @@ export async function POST(
       );
     }
 
-    const checkoutUrl =
-      buildHostedCheckoutUrl(
-        transaction.id,
+    const {
+      error:
+        invoiceUpdateError,
+    } = await admin
+      .from("invoices")
+      .update({
+        payment_provider:
+          "paddle",
 
-        order.customer_email ??
-          user.email ??
-          "",
+        paddle_transaction_id:
+          transaction.id,
 
-        noDiscount
+        updated_at:
+          now,
+      })
+      .eq(
+        "id",
+        invoice.id
+      )
+      .eq(
+        "status",
+        "unpaid"
       );
+
+    if (
+      invoiceUpdateError
+    ) {
+      console.error(
+        "Failed attaching Paddle transaction to service invoice:",
+        invoiceUpdateError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to connect payment to your invoice.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
 
     return checkoutResponse(
       {
-        checkoutUrl,
+        checkoutUrl:
+          buildHostedCheckoutUrl(
+            transaction.id,
+
+            order.customer_email ??
+              user.email ??
+              "",
+
+            {
+              discountId:
+                null,
+
+              code:
+                null,
+            }
+          ),
 
         transactionId:
           transaction.id,
-
-        couponCode: null,
-
-        discountId: null,
       },
       order.order_number
     );

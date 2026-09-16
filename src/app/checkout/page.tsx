@@ -37,9 +37,6 @@ export default async function CheckoutPage({
   const serviceSlug =
     query.service?.trim();
 
-  /*
-   * Checkout must contain exactly one type.
-   */
   if (
     (!productSlug &&
       !serviceSlug) ||
@@ -83,11 +80,9 @@ export default async function CheckoutPage({
     );
   }
 
-  /*
-   * ======================================
-   * PRODUCT
-   * ======================================
-   */
+  const admin =
+    createAdminClient();
+
   if (
     itemType ===
     "product"
@@ -96,7 +91,7 @@ export default async function CheckoutPage({
       data: product,
       error:
         productError,
-    } = await supabase
+    } = await admin
       .from("products")
       .select(`
         id,
@@ -128,7 +123,7 @@ export default async function CheckoutPage({
     const {
       data:
         ownership,
-    } = await supabase
+    } = await admin
       .from(
         "customer_products"
       )
@@ -200,56 +195,71 @@ export default async function CheckoutPage({
             currency:
               product.currency,
           }}
+          billingProfile={
+            null
+          }
         />
       </div>
     );
   }
 
-  /*
-   * ======================================
-   * SERVICE
-   * ======================================
-   */
+  const [
+    serviceResult,
+    billingResult,
+  ] =
+    await Promise.all([
+      admin
+        .from("services")
+        .select(`
+          id,
+          slug,
+          name,
+          short_description,
+          image_url,
+          price_cents,
+          currency,
+          active
+        `)
+        .eq(
+          "slug",
+          slug
+        )
+        .eq(
+          "active",
+          true
+        )
+        .maybeSingle(),
 
-  const admin =
-    createAdminClient();
+      admin
+        .from(
+          "billing_profiles"
+        )
+        .select(`
+          company_name,
+          address_line_1,
+          address_line_2,
+          city,
+          state,
+          postal_code,
+          country
+        `)
+        .eq(
+          "user_id",
+          user.id
+        )
+        .maybeSingle(),
+    ]);
 
-  const {
-    data: service,
-    error:
-      serviceError,
-  } = await admin
-    .from("services")
-    .select(`
-      id,
-      slug,
-      name,
-      short_description,
-      image_url,
-      price_cents,
-      currency,
-      active
-    `)
-    .eq(
-      "slug",
-      slug
-    )
-    .eq(
-      "active",
-      true
-    )
-    .maybeSingle();
+  const service =
+    serviceResult.data;
 
   if (
-    serviceError ||
+    serviceResult.error ||
     !service
   ) {
     console.error(
       "Checkout service lookup failed:",
-      {
-        slug,
-        serviceError,
-      }
+      serviceResult.error
     );
 
     redirect("/services");
@@ -299,6 +309,51 @@ export default async function CheckoutPage({
           currency:
             service.currency,
         }}
+        billingProfile={
+          billingResult.data
+            ? {
+                companyName:
+                  billingResult
+                    .data
+                    .company_name ??
+                  "",
+
+                addressLine1:
+                  billingResult
+                    .data
+                    .address_line_1 ??
+                  "",
+
+                addressLine2:
+                  billingResult
+                    .data
+                    .address_line_2 ??
+                  "",
+
+                city:
+                  billingResult
+                    .data.city ??
+                  "",
+
+                state:
+                  billingResult
+                    .data.state ??
+                  "",
+
+                postalCode:
+                  billingResult
+                    .data
+                    .postal_code ??
+                  "",
+
+                country:
+                  billingResult
+                    .data
+                    .country ??
+                  "",
+              }
+            : null
+        }
       />
     </div>
   );

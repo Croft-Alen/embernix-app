@@ -1,6 +1,8 @@
 "use server";
 
-import { randomUUID } from "crypto";
+import {
+  randomUUID,
+} from "crypto";
 
 import {
   createAdminClient,
@@ -13,6 +15,16 @@ import {
 export type CheckoutItemType =
   | "product"
   | "service";
+
+export type ServiceBillingInput = {
+  companyName: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+};
 
 export type PrepareCheckoutResult =
   | {
@@ -34,41 +46,460 @@ function createOrderNumber() {
 
   const datePart = [
     now.getUTCFullYear(),
-
     String(
       now.getUTCMonth() + 1
-    ).padStart(
-      2,
-      "0"
-    ),
-
+    ).padStart(2, "0"),
     String(
       now.getUTCDate()
-    ).padStart(
-      2,
-      "0"
-    ),
+    ).padStart(2, "0"),
   ].join("");
 
   const randomPart =
     randomUUID()
-      .replace(
-        /-/g,
-        ""
-      )
-      .slice(
-        0,
-        8
-      )
+      .replace(/-/g, "")
+      .slice(0, 8)
       .toUpperCase();
 
   return `EMB-${datePart}-${randomPart}`;
 }
 
+function createInvoiceNumber() {
+  const now =
+    new Date();
+
+  const datePart = [
+    now.getUTCFullYear(),
+    String(
+      now.getUTCMonth() + 1
+    ).padStart(2, "0"),
+    String(
+      now.getUTCDate()
+    ).padStart(2, "0"),
+  ].join("");
+
+  const randomPart =
+    randomUUID()
+      .replace(/-/g, "")
+      .slice(0, 8)
+      .toUpperCase();
+
+  return `INV-${datePart}-${randomPart}`;
+}
+
+function clean(
+  value:
+    | string
+    | null
+    | undefined
+) {
+  return String(
+    value ?? ""
+  ).trim();
+}
+
+async function saveBillingProfile(
+  userId: string,
+  billing: ServiceBillingInput
+) {
+  const admin =
+    createAdminClient();
+
+  const companyName =
+    clean(
+      billing.companyName
+    );
+
+  const addressLine1 =
+    clean(
+      billing.addressLine1
+    );
+
+  const addressLine2 =
+    clean(
+      billing.addressLine2
+    );
+
+  const city =
+    clean(
+      billing.city
+    );
+
+  const state =
+    clean(
+      billing.state
+    );
+
+  const postalCode =
+    clean(
+      billing.postalCode
+    );
+
+  const country =
+    clean(
+      billing.country
+    );
+
+  if (!addressLine1) {
+    throw new Error(
+      "Billing address is required."
+    );
+  }
+
+  if (!city) {
+    throw new Error(
+      "Billing city is required."
+    );
+  }
+
+  if (!country) {
+    throw new Error(
+      "Billing country is required."
+    );
+  }
+
+  const {
+    data: profile,
+    error,
+  } = await admin
+    .from("billing_profiles")
+    .upsert(
+      {
+        user_id:
+          userId,
+
+        company_name:
+          companyName ||
+          null,
+
+        address_line_1:
+          addressLine1,
+
+        address_line_2:
+          addressLine2 ||
+          null,
+
+        city,
+
+        state:
+          state ||
+          null,
+
+        postal_code:
+          postalCode ||
+          null,
+
+        country,
+
+        updated_at:
+          new Date().toISOString(),
+      },
+      {
+        onConflict:
+          "user_id",
+      }
+    )
+    .select("id")
+    .single();
+
+  if (
+    error ||
+    !profile
+  ) {
+    console.error(
+      "Failed to save billing profile:",
+      error
+    );
+
+    throw new Error(
+      "Unable to save billing details."
+    );
+  }
+
+  return profile.id;
+}
+
+async function ensureServiceInvoice({
+  orderId,
+  userId,
+  serviceId,
+  serviceName,
+  serviceDescription,
+  billingProfileId,
+  currency,
+  subtotalCents,
+  totalCents,
+  unitPriceCents,
+  quantity,
+}: {
+  orderId: string;
+  userId: string;
+  serviceId: string;
+  serviceName: string;
+  serviceDescription:
+    | string
+    | null;
+  billingProfileId: string;
+  currency: string;
+  subtotalCents: number;
+  totalCents: number;
+  unitPriceCents: number;
+  quantity: number;
+}) {
+  const admin =
+    createAdminClient();
+
+  const {
+    data:
+      existingInvoice,
+    error:
+      existingInvoiceError,
+  } = await admin
+    .from("invoices")
+    .select(`
+      id,
+      status
+    `)
+    .eq(
+      "order_id",
+      orderId
+    )
+    .maybeSingle();
+
+  if (
+    existingInvoiceError
+  ) {
+    console.error(
+      "Failed checking service invoice:",
+      existingInvoiceError
+    );
+
+    throw new Error(
+      "Unable to prepare service invoice."
+    );
+  }
+
+  let invoiceId:
+    string;
+
+  if (
+    existingInvoice
+  ) {
+    invoiceId =
+      existingInvoice.id;
+
+    if (
+      existingInvoice.status ===
+      "unpaid"
+    ) {
+      const {
+        error:
+          refreshError,
+      } = await admin
+        .from("invoices")
+        .update({
+          billing_profile_id:
+            billingProfileId,
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          "id",
+          invoiceId
+        );
+
+      if (refreshError) {
+        console.error(
+          "Failed refreshing service invoice:",
+          refreshError
+        );
+
+        throw new Error(
+          "Unable to refresh service invoice."
+        );
+      }
+    }
+  } else {
+    const now =
+      new Date().toISOString();
+
+    const {
+      data:
+        createdInvoice,
+      error:
+        invoiceError,
+    } = await admin
+      .from("invoices")
+      .insert({
+        invoice_number:
+          createInvoiceNumber(),
+
+        order_id:
+          orderId,
+
+        user_id:
+          userId,
+
+        service_id:
+          serviceId,
+
+        billing_profile_id:
+          billingProfileId,
+
+        source:
+          "service",
+
+        status:
+          "unpaid",
+
+        currency,
+
+        subtotal_cents:
+          subtotalCents,
+
+        discount_cents:
+          0,
+
+        tax_cents:
+          0,
+
+        total_cents:
+          totalCents,
+
+        issued_at:
+          now,
+
+        due_at:
+          null,
+
+        paid_at:
+          null,
+
+        payment_provider:
+          null,
+
+        paddle_transaction_id:
+          null,
+
+        notes:
+          null,
+
+        created_by:
+          null,
+
+        updated_at:
+          now,
+      })
+      .select("id")
+      .single();
+
+    if (
+      invoiceError ||
+      !createdInvoice
+    ) {
+      console.error(
+        "Failed creating unpaid service invoice:",
+        invoiceError
+      );
+
+      throw new Error(
+        "Unable to create service invoice."
+      );
+    }
+
+    invoiceId =
+      createdInvoice.id;
+  }
+
+  const {
+    data:
+      existingItem,
+    error:
+      existingItemError,
+  } = await admin
+    .from("invoice_items")
+    .select("id")
+    .eq(
+      "invoice_id",
+      invoiceId
+    )
+    .limit(1)
+    .maybeSingle();
+
+  if (
+    existingItemError
+  ) {
+    console.error(
+      "Failed checking service invoice item:",
+      existingItemError
+    );
+
+    throw new Error(
+      "Unable to prepare invoice item."
+    );
+  }
+
+  if (!existingItem) {
+    const {
+      error:
+        invoiceItemError,
+    } = await admin
+      .from("invoice_items")
+      .insert({
+        invoice_id:
+          invoiceId,
+
+        title:
+          serviceName,
+
+        description:
+          serviceDescription,
+
+        quantity,
+
+        unit_price_cents:
+          unitPriceCents,
+
+        sort_order:
+          0,
+      });
+
+    if (
+      invoiceItemError
+    ) {
+      console.error(
+        "Failed creating service invoice item:",
+        invoiceItemError
+      );
+
+      await admin
+        .from("invoices")
+        .delete()
+        .eq(
+          "id",
+          invoiceId
+        )
+        .eq(
+          "status",
+          "unpaid"
+        );
+
+      throw new Error(
+        "Unable to create service invoice item."
+      );
+    }
+  }
+
+  return invoiceId;
+}
+
 export async function prepareCheckoutOrder(
   itemType: CheckoutItemType,
   itemSlug: string,
-  acceptedTerms: boolean
+  acceptedTerms: boolean,
+  billing:
+    | ServiceBillingInput
+    | null = null
 ): Promise<PrepareCheckoutResult> {
   if (!acceptedTerms) {
     return {
@@ -128,22 +559,22 @@ export async function prepareCheckoutOrder(
     };
   }
 
+  const admin =
+    createAdminClient();
+
   let item:
     | {
         id: string;
         slug: string;
         name: string;
+        short_description:
+          | string
+          | null;
         price_cents: number;
         currency: string;
-        active: boolean;
       }
     | null = null;
 
-  /*
-   * ======================================
-   * PRODUCT
-   * ======================================
-   */
   if (
     itemType ===
     "product"
@@ -152,7 +583,7 @@ export async function prepareCheckoutOrder(
       data: product,
       error:
         productError,
-    } = await supabase
+    } = await admin
       .from("products")
       .select(`
         id,
@@ -183,18 +614,21 @@ export async function prepareCheckoutOrder(
       };
     }
 
-    item = product;
+    item = {
+      ...product,
+      short_description:
+        null,
+    };
 
     const {
       data:
         ownership,
-    } = await supabase
+    } = await admin
       .from(
         "customer_products"
       )
       .select(`
         id,
-        product_id,
         status
       `)
       .eq(
@@ -220,17 +654,7 @@ export async function prepareCheckoutOrder(
           product.id,
       };
     }
-  }
-
-  /*
-   * ======================================
-   * SERVICE
-   * ======================================
-   */
-  else {
-    const admin =
-      createAdminClient();
-
+  } else {
     const {
       data: service,
       error:
@@ -241,6 +665,7 @@ export async function prepareCheckoutOrder(
         id,
         slug,
         name,
+        short_description,
         price_cents,
         currency,
         active
@@ -266,7 +691,8 @@ export async function prepareCheckoutOrder(
       };
     }
 
-    item = service;
+    item =
+      service;
   }
 
   if (
@@ -282,19 +708,51 @@ export async function prepareCheckoutOrder(
     };
   }
 
-  /*
-   * ======================================
-   * REUSE PENDING ORDER
-   * ======================================
-   */
+  let billingProfileId:
+    | string
+    | null = null;
+
+  if (
+    itemType ===
+    "service"
+  ) {
+    if (!billing) {
+      return {
+        success: false,
+        error:
+          "Billing details are required for services.",
+      };
+    }
+
+    try {
+      billingProfileId =
+        await saveBillingProfile(
+          user.id,
+          billing
+        );
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof
+            Error
+            ? error.message
+            : "Unable to save billing details.",
+      };
+    }
+  }
+
   const {
     data:
       pendingOrders,
-  } = await supabase
+  } = await admin
     .from("orders")
     .select(`
       id,
       order_number,
+      currency,
+      subtotal_cents,
+      total_cents,
       created_at
     `)
     .eq(
@@ -324,16 +782,19 @@ export async function prepareCheckoutOrder(
       const pendingOrder
       of pendingOrders
     ) {
-      let pendingItemQuery =
-        supabase
+      let query =
+        admin
           .from(
             "order_items"
           )
           .select(`
             id,
+            item_type,
             product_id,
             service_id,
-            item_type
+            product_name,
+            unit_price_cents,
+            quantity
           `)
           .eq(
             "order_id",
@@ -348,14 +809,14 @@ export async function prepareCheckoutOrder(
         itemType ===
         "product"
       ) {
-        pendingItemQuery =
-          pendingItemQuery.eq(
+        query =
+          query.eq(
             "product_id",
             item.id
           );
       } else {
-        pendingItemQuery =
-          pendingItemQuery.eq(
+        query =
+          query.eq(
             "service_id",
             item.id
           );
@@ -365,18 +826,15 @@ export async function prepareCheckoutOrder(
         data:
           pendingItem,
       } =
-        await pendingItemQuery.maybeSingle();
+        await query.maybeSingle();
 
       if (!pendingItem) {
         continue;
       }
 
-      const admin =
-        createAdminClient();
-
       const {
         error:
-          updateError,
+          refreshError,
       } = await admin
         .from("orders")
         .update({
@@ -394,12 +852,10 @@ export async function prepareCheckoutOrder(
           pendingOrder.id
         );
 
-      if (
-        updateError
-      ) {
+      if (refreshError) {
         console.error(
-          "Failed to refresh checkout terms acceptance:",
-          updateError
+          "Failed refreshing pending checkout:",
+          refreshError
         );
 
         return {
@@ -409,6 +865,73 @@ export async function prepareCheckoutOrder(
         };
       }
 
+      if (
+        itemType ===
+          "service" &&
+        billingProfileId
+      ) {
+        try {
+          await ensureServiceInvoice({
+            orderId:
+              pendingOrder.id,
+
+            userId:
+              user.id,
+
+            serviceId:
+              item.id,
+
+            serviceName:
+              pendingItem.product_name ??
+              item.name,
+
+            serviceDescription:
+              item.short_description,
+
+            billingProfileId,
+
+            currency:
+              pendingOrder.currency,
+
+            subtotalCents:
+              Number(
+                pendingOrder
+                  .subtotal_cents
+              ),
+
+            totalCents:
+              Number(
+                pendingOrder
+                  .total_cents
+              ),
+
+            unitPriceCents:
+              Number(
+                pendingItem
+                  .unit_price_cents
+              ),
+
+            quantity:
+              Math.max(
+                Number(
+                  pendingItem.quantity ??
+                    1
+                ),
+                1
+              ),
+          });
+        } catch (error) {
+          return {
+            success: false,
+            error:
+              error instanceof
+                Error
+                ? error.message
+                : "Unable to prepare service invoice.",
+          };
+        }
+      }
+
       return {
         success: true,
         orderNumber:
@@ -416,15 +939,6 @@ export async function prepareCheckoutOrder(
       };
     }
   }
-
-  /*
-   * ======================================
-   * CREATE ORDER
-   * ======================================
-   */
-
-  const admin =
-    createAdminClient();
 
   const orderId =
     randomUUID();
@@ -487,9 +1001,7 @@ export async function prepareCheckoutOrder(
         TERMS_VERSION,
     });
 
-  if (
-    orderError
-  ) {
+  if (orderError) {
     console.error(
       "Failed to create checkout order:",
       orderError
@@ -502,14 +1014,6 @@ export async function prepareCheckoutOrder(
     };
   }
 
-  /*
-   * ======================================
-   * CREATE ORDER ITEM
-   * ======================================
-   *
-   * line_total_cents is GENERATED.
-   * Do not insert it.
-   */
   const {
     error:
       itemError,
@@ -544,9 +1048,7 @@ export async function prepareCheckoutOrder(
         1,
     });
 
-  if (
-    itemError
-  ) {
+  if (itemError) {
     console.error(
       "Failed to create checkout item:",
       itemError
@@ -565,6 +1067,64 @@ export async function prepareCheckoutOrder(
       error:
         "Unable to prepare checkout. Please try again.",
     };
+  }
+
+  if (
+    itemType ===
+      "service" &&
+    billingProfileId
+  ) {
+    try {
+      await ensureServiceInvoice({
+        orderId,
+
+        userId:
+          user.id,
+
+        serviceId:
+          item.id,
+
+        serviceName:
+          item.name,
+
+        serviceDescription:
+          item.short_description,
+
+        billingProfileId,
+
+        currency:
+          item.currency,
+
+        subtotalCents:
+          item.price_cents,
+
+        totalCents:
+          item.price_cents,
+
+        unitPriceCents:
+          item.price_cents,
+
+        quantity:
+          1,
+      });
+    } catch (error) {
+      await admin
+        .from("orders")
+        .delete()
+        .eq(
+          "id",
+          orderId
+        );
+
+      return {
+        success: false,
+        error:
+          error instanceof
+            Error
+            ? error.message
+            : "Unable to create service invoice.",
+      };
+    }
   }
 
   return {

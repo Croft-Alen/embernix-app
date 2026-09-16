@@ -1,8 +1,4 @@
 import {
-  randomUUID,
-} from "crypto";
-
-import {
   NextRequest,
   NextResponse,
 } from "next/server";
@@ -17,44 +13,6 @@ import {
 
 export const runtime =
   "nodejs";
-
-function createInvoiceNumber() {
-  const now =
-    new Date();
-
-  const datePart = [
-    now.getUTCFullYear(),
-
-    String(
-      now.getUTCMonth() +
-        1
-    ).padStart(
-      2,
-      "0"
-    ),
-
-    String(
-      now.getUTCDate()
-    ).padStart(
-      2,
-      "0"
-    ),
-  ].join("");
-
-  const randomPart =
-    randomUUID()
-      .replace(
-        /-/g,
-        ""
-      )
-      .slice(
-        0,
-        8
-      )
-      .toUpperCase();
-
-  return `INV-${datePart}-${randomPart}`;
-}
 
 export async function POST(
   request: NextRequest
@@ -114,11 +72,9 @@ export async function POST(
       event.eventType !==
       "transaction.completed"
     ) {
-      return NextResponse.json(
-        {
-          received: true,
-        }
-      );
+      return NextResponse.json({
+        received: true,
+      });
     }
 
     const transaction =
@@ -162,7 +118,7 @@ export async function POST(
 
     /*
      * ======================================
-     * DIRECT INVOICE PAYMENT
+     * DIRECT / MANUAL INVOICE PAYMENT
      * ======================================
      */
     if (
@@ -188,9 +144,6 @@ export async function POST(
           invoice_number,
           user_id,
           status,
-          currency,
-          subtotal_cents,
-          total_cents,
           paddle_transaction_id
         `)
         .eq(
@@ -203,7 +156,7 @@ export async function POST(
         !invoice &&
         customInvoiceId
       ) {
-        const recoveryResult =
+        const recovery =
           await admin
             .from("invoices")
             .select(`
@@ -211,9 +164,6 @@ export async function POST(
               invoice_number,
               user_id,
               status,
-              currency,
-              subtotal_cents,
-              total_cents,
               paddle_transaction_id
             `)
             .eq(
@@ -223,25 +173,16 @@ export async function POST(
             .maybeSingle();
 
         invoice =
-          recoveryResult.data;
+          recovery.data;
 
         invoiceError =
-          recoveryResult.error;
+          recovery.error;
       }
 
       if (
         invoiceError ||
         !invoice
       ) {
-        console.error(
-          "Paddle webhook could not find Embernix invoice:",
-          {
-            transactionId,
-            customInvoiceId,
-            invoiceError,
-          }
-        );
-
         return NextResponse.json(
           {
             error:
@@ -254,65 +195,40 @@ export async function POST(
       }
 
       if (
-        invoice
-          .paddle_transaction_id &&
-        invoice
-          .paddle_transaction_id !==
-          transactionId
-      ) {
-        console.error(
-          "Paddle invoice transaction mismatch.",
-          {
-            invoiceId:
-              invoice.id,
-
-            stored:
-              invoice
-                .paddle_transaction_id,
-
-            received:
-              transactionId,
-          }
-        );
-
-        return NextResponse.json(
-          {
-            error:
-              "Transaction mismatch.",
-          },
-          {
-            status: 409,
-          }
-        );
-      }
-
-      if (
         invoice.status ===
         "paid"
       ) {
-        return NextResponse.json(
-          {
-            received: true,
-            fulfilled: true,
-            paymentType:
-              "invoice",
-          }
-        );
+        return NextResponse.json({
+          received: true,
+          fulfilled: true,
+          paymentType:
+            "invoice",
+        });
       }
 
-      const paddleSubtotal =
+      const subtotal =
         Number(
           transaction.details
             ?.totals
             ?.subtotal
         );
 
-      const paddleTotal =
+      const total =
         Number(
           transaction.details
             ?.totals
             ?.total
         );
+
+      const tax =
+        Number(
+          transaction.details
+            ?.totals
+            ?.tax
+        );
+
+      const now =
+        new Date().toISOString();
 
       const updateData:
         Record<
@@ -323,7 +239,7 @@ export async function POST(
           "paid",
 
         paid_at:
-          new Date().toISOString(),
+          now,
 
         payment_provider:
           "paddle",
@@ -332,25 +248,34 @@ export async function POST(
           transactionId,
 
         updated_at:
-          new Date().toISOString(),
+          now,
       };
 
       if (
         Number.isFinite(
-          paddleSubtotal
+          subtotal
         )
       ) {
         updateData.subtotal_cents =
-          paddleSubtotal;
+          subtotal;
       }
 
       if (
         Number.isFinite(
-          paddleTotal
+          total
         )
       ) {
         updateData.total_cents =
-          paddleTotal;
+          total;
+      }
+
+      if (
+        Number.isFinite(
+          tax
+        )
+      ) {
+        updateData.tax_cents =
+          tax;
       }
 
       if (
@@ -362,7 +287,7 @@ export async function POST(
 
       const {
         error:
-          invoiceUpdateError,
+          updateError,
       } = await admin
         .from("invoices")
         .update(
@@ -373,12 +298,10 @@ export async function POST(
           invoice.id
         );
 
-      if (
-        invoiceUpdateError
-      ) {
+      if (updateError) {
         console.error(
-          "Failed to finalize paid invoice:",
-          invoiceUpdateError
+          "Failed finalizing direct invoice:",
+          updateError
         );
 
         return NextResponse.json(
@@ -392,14 +315,12 @@ export async function POST(
         );
       }
 
-      return NextResponse.json(
-        {
-          received: true,
-          fulfilled: true,
-          paymentType:
-            "invoice",
-        }
-      );
+      return NextResponse.json({
+        received: true,
+        fulfilled: true,
+        paymentType:
+          "invoice",
+      });
     }
 
     /*
@@ -429,8 +350,6 @@ export async function POST(
         status,
         payment_status,
         currency,
-        subtotal_cents,
-        total_cents,
         paddle_transaction_id
       `)
       .eq(
@@ -443,7 +362,7 @@ export async function POST(
       !order &&
       customOrderId
     ) {
-      const recoveryResult =
+      const recovery =
         await admin
           .from("orders")
           .select(`
@@ -453,8 +372,6 @@ export async function POST(
             status,
             payment_status,
             currency,
-            subtotal_cents,
-            total_cents,
             paddle_transaction_id
           `)
           .eq(
@@ -464,10 +381,10 @@ export async function POST(
           .maybeSingle();
 
       order =
-        recoveryResult.data;
+        recovery.data;
 
       orderError =
-        recoveryResult.error;
+        recovery.error;
     }
 
     if (
@@ -475,7 +392,7 @@ export async function POST(
       !order
     ) {
       console.error(
-        "Paddle webhook could not find Embernix order:",
+        "Paddle webhook could not find order:",
         {
           transactionId,
           customOrderId,
@@ -494,39 +411,6 @@ export async function POST(
       );
     }
 
-    if (
-      order
-        .paddle_transaction_id &&
-      order
-        .paddle_transaction_id !==
-        transactionId
-    ) {
-      console.error(
-        "Paddle transaction mismatch.",
-        {
-          orderId:
-            order.id,
-
-          stored:
-            order
-              .paddle_transaction_id,
-
-          received:
-            transactionId,
-        }
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Transaction mismatch.",
-        },
-        {
-          status: 409,
-        }
-      );
-    }
-
     const {
       data: item,
       error:
@@ -537,10 +421,7 @@ export async function POST(
         id,
         item_type,
         product_id,
-        service_id,
-        product_name,
-        unit_price_cents,
-        quantity
+        service_id
       `)
       .eq(
         "order_id",
@@ -553,11 +434,6 @@ export async function POST(
       itemError ||
       !item
     ) {
-      console.error(
-        "Paid order has no order item:",
-        itemError
-      );
-
       return NextResponse.json(
         {
           error:
@@ -575,33 +451,33 @@ export async function POST(
           "product"
       );
 
-    const paddleSubtotal =
+    const now =
+      new Date().toISOString();
+
+    const subtotal =
       Number(
         transaction.details
           ?.totals
           ?.subtotal
       );
 
-    const paddleTotal =
+    const total =
       Number(
         transaction.details
           ?.totals
           ?.total
       );
 
-    const paddleTax =
+    const tax =
       Number(
         transaction.details
           ?.totals
           ?.tax
       );
 
-    const paidAt =
-      new Date().toISOString();
-
     /*
      * ======================================
-     * PRODUCT FULFILLMENT
+     * PRODUCT
      * ======================================
      */
     if (
@@ -611,14 +487,6 @@ export async function POST(
       if (
         !item.product_id
       ) {
-        console.error(
-          "Paid product order has no product_id.",
-          {
-            orderId:
-              order.id,
-          }
-        );
-
         return NextResponse.json(
           {
             error:
@@ -652,7 +520,7 @@ export async function POST(
               "active",
 
             purchased_at:
-              paidAt,
+              now,
           },
           {
             onConflict:
@@ -664,7 +532,7 @@ export async function POST(
         ownershipError
       ) {
         console.error(
-          "Failed to grant product ownership:",
+          "Failed granting product ownership:",
           ownershipError
         );
 
@@ -682,69 +550,70 @@ export async function POST(
 
     /*
      * ======================================
-     * SERVICE FULFILLMENT
+     * SERVICE
      * ======================================
      */
     else if (
       itemType ===
       "service"
     ) {
+      const customInvoiceId =
+        typeof customData
+          .embernix_invoice_id ===
+        "string"
+          ? customData
+              .embernix_invoice_id
+          : null;
+
+      let invoiceQuery =
+        admin
+          .from("invoices")
+          .select(`
+            id,
+            status,
+            order_id,
+            service_id,
+            paddle_transaction_id
+          `);
+
+      const {
+        data: invoice,
+        error:
+          invoiceError,
+      } = customInvoiceId
+        ? await invoiceQuery
+            .eq(
+              "id",
+              customInvoiceId
+            )
+            .maybeSingle()
+        : await invoiceQuery
+            .eq(
+              "order_id",
+              order.id
+            )
+            .maybeSingle();
+
       if (
-        !item.service_id
+        invoiceError ||
+        !invoice
       ) {
         console.error(
-          "Paid service order has no service_id.",
+          "Existing service invoice not found:",
           {
             orderId:
               order.id,
+
+            customInvoiceId,
+
+            invoiceError,
           }
         );
 
         return NextResponse.json(
           {
             error:
-              "Service information missing.",
-          },
-          {
-            status: 500,
-          }
-        );
-      }
-
-      /*
-       * Idempotency:
-       * If webhook retries, don't create
-       * another service invoice.
-       */
-      const {
-        data:
-          existingInvoice,
-        error:
-          existingInvoiceError,
-      } = await admin
-        .from("invoices")
-        .select(`
-          id,
-          status
-        `)
-        .eq(
-          "paddle_transaction_id",
-          transactionId
-        )
-        .maybeSingle();
-
-      if (
-        existingInvoiceError
-      ) {
-        console.error(
-          "Failed checking existing service invoice:",
-          existingInvoiceError
-        );
-
-        return NextResponse.json(
-          {
-            error:
-              "Service invoice lookup failed.",
+              "Service invoice not found.",
           },
           {
             status: 500,
@@ -753,271 +622,97 @@ export async function POST(
       }
 
       if (
-        !existingInvoice
+        invoice.status !==
+          "paid"
       ) {
-        const {
-          data: service,
-          error:
-            serviceError,
-        } = await admin
-          .from("services")
-          .select(`
-            id,
-            name,
-            short_description
-          `)
-          .eq(
-            "id",
-            item.service_id
-          )
-          .maybeSingle();
+        const invoiceUpdate:
+          Record<
+            string,
+            unknown
+          > = {
+          status:
+            "paid",
+
+          paid_at:
+            now,
+
+          payment_provider:
+            "paddle",
+
+          paddle_transaction_id:
+            transactionId,
+
+          updated_at:
+            now,
+        };
 
         if (
-          serviceError ||
-          !service
+          Number.isFinite(
+            subtotal
+          )
+        ) {
+          invoiceUpdate.subtotal_cents =
+            subtotal;
+        }
+
+        if (
+          Number.isFinite(
+            total
+          )
+        ) {
+          invoiceUpdate.total_cents =
+            total;
+        }
+
+        if (
+          Number.isFinite(
+            tax
+          )
+        ) {
+          invoiceUpdate.tax_cents =
+            tax;
+        }
+
+        if (
+          transaction.currencyCode
+        ) {
+          invoiceUpdate.currency =
+            transaction.currencyCode;
+        }
+
+        const {
+          error:
+            invoiceUpdateError,
+        } = await admin
+          .from("invoices")
+          .update(
+            invoiceUpdate
+          )
+          .eq(
+            "id",
+            invoice.id
+          );
+
+        if (
+          invoiceUpdateError
         ) {
           console.error(
-            "Paid service could not be loaded:",
-            serviceError
+            "Failed marking service invoice paid:",
+            invoiceUpdateError
           );
 
           return NextResponse.json(
             {
               error:
-                "Service fulfillment failed.",
+                "Service invoice finalization failed.",
             },
             {
               status: 500,
             }
           );
         }
-
-        const subtotal =
-          Number.isFinite(
-            paddleSubtotal
-          )
-            ? paddleSubtotal
-            : Number(
-                item
-                  .unit_price_cents
-              ) *
-              Math.max(
-                Number(
-                  item.quantity ??
-                    1
-                ),
-                1
-              );
-
-        const total =
-          Number.isFinite(
-            paddleTotal
-          )
-            ? paddleTotal
-            : subtotal;
-
-        const tax =
-          Number.isFinite(
-            paddleTax
-          )
-            ? paddleTax
-            : Math.max(
-                0,
-                total -
-                  subtotal
-              );
-
-        const invoiceNumber =
-          createInvoiceNumber();
-
-        const {
-          data:
-            serviceInvoice,
-          error:
-            serviceInvoiceError,
-        } = await admin
-          .from("invoices")
-          .insert({
-            invoice_number:
-              invoiceNumber,
-
-            user_id:
-              order.user_id,
-
-            service_id:
-              service.id,
-
-            billing_profile_id:
-              null,
-
-            source:
-              "service",
-
-            status:
-              "paid",
-
-            currency:
-              transaction
-                .currencyCode ||
-              order.currency,
-
-            subtotal_cents:
-              subtotal,
-
-            discount_cents:
-              0,
-
-            tax_cents:
-              tax,
-
-            total_cents:
-              total,
-
-            issued_at:
-              paidAt,
-
-            due_at:
-              null,
-
-            paid_at:
-              paidAt,
-
-            payment_provider:
-              "paddle",
-
-            paddle_transaction_id:
-              transactionId,
-
-            notes:
-              null,
-
-            created_by:
-              null,
-
-            updated_at:
-              paidAt,
-          })
-          .select("id")
-          .single();
-
-        if (
-          serviceInvoiceError ||
-          !serviceInvoice
-        ) {
-          /*
-           * A simultaneous retry might have
-           * created it first. Check again.
-           */
-          const {
-            data:
-              recoveredInvoice,
-          } = await admin
-            .from("invoices")
-            .select("id")
-            .eq(
-              "paddle_transaction_id",
-              transactionId
-            )
-            .maybeSingle();
-
-          if (
-            !recoveredInvoice
-          ) {
-            console.error(
-              "Failed to create paid service invoice:",
-              serviceInvoiceError
-            );
-
-            return NextResponse.json(
-              {
-                error:
-                  "Service invoice creation failed.",
-              },
-              {
-                status: 500,
-              }
-            );
-          }
-        } else {
-          const {
-            error:
-              invoiceItemError,
-          } = await admin
-            .from(
-              "invoice_items"
-            )
-            .insert({
-              invoice_id:
-                serviceInvoice.id,
-
-              title:
-                service.name,
-
-              description:
-                service.short_description,
-
-              quantity:
-                Math.max(
-                  Number(
-                    item.quantity ??
-                      1
-                  ),
-                  1
-                ),
-
-              unit_price_cents:
-                Number(
-                  item
-                    .unit_price_cents
-                ),
-
-              sort_order:
-                0,
-            });
-
-          if (
-            invoiceItemError
-          ) {
-            console.error(
-              "Failed to create service invoice item:",
-              invoiceItemError
-            );
-
-            /*
-             * Delete incomplete invoice so
-             * Paddle retry can rebuild it.
-             */
-            await admin
-              .from("invoices")
-              .delete()
-              .eq(
-                "id",
-                serviceInvoice.id
-              );
-
-            return NextResponse.json(
-              {
-                error:
-                  "Service invoice item creation failed.",
-              },
-              {
-                status: 500,
-              }
-            );
-          }
-        }
       }
     } else {
-      console.error(
-        "Unsupported paid order item type:",
-        {
-          orderId:
-            order.id,
-
-          itemType,
-        }
-      );
-
       return NextResponse.json(
         {
           error:
@@ -1031,11 +726,11 @@ export async function POST(
 
     /*
      * ======================================
-     * FINALIZE CENTRAL ORDER
+     * FINALIZE ORDER
      * ======================================
      */
 
-    const updateData:
+    const orderUpdate:
       Record<
         string,
         unknown
@@ -1047,7 +742,7 @@ export async function POST(
         "paid",
 
       paid_at:
-        paidAt,
+        now,
 
       payment_provider:
         "paddle",
@@ -1067,51 +762,53 @@ export async function POST(
         null,
 
       updated_at:
-        paidAt,
+        now,
     };
 
     if (
       Number.isFinite(
-        paddleSubtotal
+        subtotal
       )
     ) {
-      updateData.subtotal_cents =
-        paddleSubtotal;
+      orderUpdate.subtotal_cents =
+        subtotal;
     }
 
     if (
       Number.isFinite(
-        paddleTotal
+        total
       )
     ) {
-      updateData.total_cents =
-        paddleTotal;
+      orderUpdate.total_cents =
+        total;
     }
 
     if (
       transaction.currencyCode
     ) {
-      updateData.currency =
+      orderUpdate.currency =
         transaction.currencyCode;
     }
 
     const {
       error:
-        updateError,
+        finalOrderError,
     } = await admin
       .from("orders")
       .update(
-        updateData
+        orderUpdate
       )
       .eq(
         "id",
         order.id
       );
 
-    if (updateError) {
+    if (
+      finalOrderError
+    ) {
       console.error(
-        "Failed to finalize paid order:",
-        updateError
+        "Failed finalizing checkout order:",
+        finalOrderError
       );
 
       return NextResponse.json(
@@ -1125,14 +822,12 @@ export async function POST(
       );
     }
 
-    return NextResponse.json(
-      {
-        received: true,
-        fulfilled: true,
-        paymentType:
-          itemType,
-      }
-    );
+    return NextResponse.json({
+      received: true,
+      fulfilled: true,
+      paymentType:
+        itemType,
+    });
   } catch (error) {
     console.error(
       "Paddle webhook verification failed:",
