@@ -8,7 +8,6 @@ import {
   BriefcaseBusiness,
   ChevronDown,
   LayoutDashboard,
-  LifeBuoy,
   LogOut,
   Menu,
   Package,
@@ -16,6 +15,7 @@ import {
   Search,
   ShoppingBag,
   ShieldCheck,
+  Ticket,
   UserRound,
 } from "lucide-react";
 
@@ -53,9 +53,7 @@ function DiscordIcon({
     <svg
       viewBox="0 0 24 24"
       aria-hidden="true"
-      className={
-        className
-      }
+      className={className}
       fill="currentColor"
     >
       <path d="M19.54 5.34A16.87 16.87 0 0 0 15.34 4l-.51 1.05a15.58 15.58 0 0 0-5.66 0L8.66 4a16.94 16.94 0 0 0-4.2 1.34C1.8 9.24 1.08 13.05 1.44 16.8a17.21 17.21 0 0 0 5.15 2.62l1.24-1.69a10.9 10.9 0 0 1-1.95-.93c.16-.12.32-.24.47-.37a12.1 12.1 0 0 0 11.3 0c.15.13.31.25.47.37-.62.37-1.28.68-1.96.93l1.24 1.69a17.17 17.17 0 0 0 5.15-2.62c.43-4.35-.74-8.13-3.01-11.46ZM8.47 14.55c-1.03 0-1.87-.95-1.87-2.12s.82-2.12 1.87-2.12 1.89.96 1.87 2.12c0 1.17-.82 2.12-1.87 2.12Zm7.06 0c-1.03 0-1.87-.95-1.87-2.12s.82-2.12 1.87-2.12 1.89.96 1.87 2.12c0 1.17-.82 2.12-1.87 2.12Z" />
@@ -115,13 +113,13 @@ const searchItems = [
   },
 
   {
-    label: "Support",
+    label: "Tickets",
     description:
-      "Support tickets",
+      "Your tickets",
     href: "/tickets",
-    icon: LifeBuoy,
+    icon: Ticket,
     keywords:
-      "support help tickets",
+      "tickets help requests support",
   },
 
   {
@@ -347,8 +345,7 @@ export function ClientTopbar({
                   event
                 ) => {
                   setSearchQuery(
-                    event.target
-                      .value
+                    event.target.value
                   );
 
                   setSearchOpen(
@@ -444,7 +441,7 @@ export function ClientTopbar({
                 rel="noreferrer"
                 aria-label="Join Embernix Discord"
                 title="Discord"
-                className="hidden h-10 w-10 items-center justify-center rounded-xl text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] xs:flex sm:flex"
+                className="hidden h-10 w-10 items-center justify-center rounded-xl text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] sm:flex"
               >
                 <DiscordIcon />
               </a>
@@ -601,9 +598,9 @@ export function ClientTopbar({
                     <DropdownLink
                       href="/tickets"
                       icon={
-                        LifeBuoy
+                        Ticket
                       }
-                      label="Support"
+                      label="Tickets"
                       onClick={() =>
                         setProfileOpen(
                           false

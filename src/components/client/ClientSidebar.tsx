@@ -9,10 +9,10 @@ import {
 import {
   BriefcaseBusiness,
   LayoutDashboard,
-  LifeBuoy,
   Package,
   ReceiptText,
   ShoppingBag,
+  Ticket,
   X,
 } from "lucide-react";
 
@@ -57,9 +57,9 @@ const baseNavigation = [
   },
 
   {
-    label: "Support",
+    label: "Tickets",
     href: "/tickets",
-    icon: LifeBuoy,
+    icon: Ticket,
   },
 ];
 

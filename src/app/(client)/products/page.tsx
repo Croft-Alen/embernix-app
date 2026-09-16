@@ -2,42 +2,87 @@ import Link from "next/link";
 
 import {
   Download,
-  ExternalLink,
+  Eye,
   Package,
 } from "lucide-react";
 
-import { redirect } from "next/navigation";
+import {
+  redirect,
+} from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+} from "@/lib/supabase/server";
 
-function formatDate(value: string | null) {
+function formatDate(
+  value:
+    | string
+    | null
+) {
   if (!value) {
     return "—";
   }
 
-  return new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  ).format(
+    new Date(
+      value
+    )
+  );
+}
+
+function statusClass(
+  status: string
+) {
+  if (
+    status ===
+    "active"
+  ) {
+    return "bg-green-50 text-green-700";
+  }
+
+  if (
+    status ===
+    "refunded"
+  ) {
+    return "bg-amber-50 text-amber-700";
+  }
+
+  return "bg-gray-100 text-gray-600";
 }
 
 export default async function ProductsPage() {
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: {
+      user,
+    },
+  } =
+    await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect(
+      "/login"
+    );
   }
 
   const {
-    data: ownerships,
-    error: ownershipError,
+    data:
+      ownerships,
+    error:
+      ownershipError,
   } = await supabase
-    .from("customer_products")
+    .from(
+      "customer_products"
+    )
     .select(`
       id,
       product_id,
@@ -45,31 +90,55 @@ export default async function ProductsPage() {
       status,
       purchased_at
     `)
-    .eq("user_id", user.id)
-    .order("purchased_at", {
-      ascending: false,
-    });
+    .eq(
+      "user_id",
+      user.id
+    )
+    .order(
+      "purchased_at",
+      {
+        ascending:
+          false,
+      }
+    );
 
-  if (ownershipError) {
+  if (
+    ownershipError
+  ) {
     console.error(
       "Failed to load owned products:",
       ownershipError
     );
   }
 
-  const ownedProducts = ownerships ?? [];
+  const ownedProducts =
+    ownerships ??
+    [];
 
-  const productIds = ownedProducts
-    .map((ownership) => ownership.product_id)
-    .filter(Boolean);
+  const productIds =
+    ownedProducts
+      .map(
+        (
+          ownership
+        ) =>
+          ownership.product_id
+      )
+      .filter(
+        Boolean
+      );
 
   const {
-    data: products,
-    error: productsError,
+    data:
+      products,
+    error:
+      productsError,
   } =
-    productIds.length > 0
+    productIds.length >
+    0
       ? await supabase
-          .from("products")
+          .from(
+            "products"
+          )
           .select(`
             id,
             name,
@@ -79,240 +148,242 @@ export default async function ProductsPage() {
             version,
             active
           `)
-          .in("id", productIds)
+          .in(
+            "id",
+            productIds
+          )
       : {
           data: [],
           error: null,
         };
 
-  if (productsError) {
+  if (
+    productsError
+  ) {
     console.error(
       "Failed to load product details:",
       productsError
     );
   }
 
-  const productMap = new Map(
-    (products ?? []).map((product) => [
-      product.id,
-      product,
-    ])
-  );
-
-  const items = ownedProducts
-    .map((ownership) => {
-      const product = productMap.get(
-        ownership.product_id
-      );
-
-      if (!product) {
-        return null;
-      }
-
-      return {
-        ownership,
-        product,
-      };
-    })
-    .filter(
+  const productMap =
+    new Map(
       (
-        item
-      ): item is NonNullable<typeof item> =>
-        Boolean(item)
+        products ??
+        []
+      ).map(
+        (
+          product
+        ) => [
+          product.id,
+          product,
+        ]
+      )
     );
 
+  const items =
+    ownedProducts
+      .map(
+        (
+          ownership
+        ) => {
+          const product =
+            productMap.get(
+              ownership.product_id
+            );
+
+          if (
+            !product
+          ) {
+            return null;
+          }
+
+          return {
+            ownership,
+            product,
+          };
+        }
+      )
+      .filter(
+        (
+          item
+        ): item is NonNullable<
+          typeof item
+        > =>
+          Boolean(
+            item
+          )
+      );
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-8">
-      {/* HEADER */}
-      <div>
-        <h1 className="text-2xl font-semibold">
+    <div className="mx-auto w-full max-w-[1440px] space-y-5">
+      <section className="rounded-[22px] border border-[var(--border)] bg-[var(--surface)] px-5 py-6 sm:px-7 sm:py-7">
+        <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-[var(--foreground)] sm:text-[27px]">
           My Products
         </h1>
 
-        <p className="mt-1 text-sm text-[var(--muted)]">
+        <p className="mt-2 text-[15px] leading-6 text-[var(--muted)]">
           Manage and download products you own.
         </p>
-      </div>
+      </section>
 
-      {/* EMPTY STATE */}
-      {items.length === 0 ? (
-        <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-[var(--border)] bg-white px-6 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--primary-soft)] text-[var(--primary)]">
-            <Package className="h-7 w-7" />
+      {items.length ===
+      0 ? (
+        <section className="flex min-h-[320px] items-center justify-center rounded-[22px] border border-[var(--border)] bg-[var(--surface)] px-5">
+          <div className="max-w-sm text-center">
+            <Package className="mx-auto h-7 w-7 text-[var(--primary)]" />
+
+            <h2 className="mt-4 text-base font-semibold">
+              No products yet
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+              Products you purchase from Embernix
+              will appear here.
+            </p>
+          </div>
+        </section>
+      ) : (
+        <section className="overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--surface)]">
+          <div className="border-b border-[var(--border)] px-5 py-4 sm:px-6">
+            <p className="text-sm font-semibold text-[var(--foreground)]">
+              Owned products
+            </p>
+
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              {
+                items.length
+              }{" "}
+              {items.length ===
+              1
+                ? "product"
+                : "products"}
+            </p>
           </div>
 
-          <h2 className="mt-5 text-lg font-semibold">
-            No products yet
-          </h2>
+          {/* Desktop */}
+          <div className="hidden md:block">
+            <div className="grid grid-cols-[minmax(220px,1.6fr)_110px_150px_110px_100px] items-center border-b border-[var(--border)] bg-[var(--surface-secondary)] px-6 py-3">
+              <TableHeading>
+                Product
+              </TableHeading>
 
-          <p className="mt-2 max-w-md text-sm leading-6 text-[var(--muted)]">
-            Products you purchase from Embernix will
-            automatically appear here.
-          </p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-          {/* TABLE HEADER / TOP INFO */}
-          <div className="flex items-center justify-between border-b border-[var(--border-light)] px-6 py-4">
+              <TableHeading>
+                Version
+              </TableHeading>
+
+              <TableHeading>
+                Purchased
+              </TableHeading>
+
+              <TableHeading>
+                Status
+              </TableHeading>
+
+              <TableHeading right>
+                Actions
+              </TableHeading>
+            </div>
+
             <div>
-              <h2 className="text-sm font-semibold">
-                Owned products
-              </h2>
+              {items.map(
+                ({
+                  product,
+                  ownership,
+                }) => {
+                  const activeOwnership =
+                    ownership.status ===
+                    "active";
 
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                {items.length}{" "}
-                {items.length === 1
-                  ? "product"
-                  : "products"}
-              </p>
+                  return (
+                    <div
+                      key={
+                        ownership.id
+                      }
+                      className="grid grid-cols-[minmax(220px,1.6fr)_110px_150px_110px_100px] items-center border-b border-[var(--border-light)] px-6 py-4 last:border-b-0"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-11 w-14 shrink-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-secondary)]">
+                          {product.image_url ? (
+                            <img
+                              src={
+                                product.image_url
+                              }
+                              alt={
+                                product.name
+                              }
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <Package className="h-4 w-4 text-[var(--muted-light)]" />
+                            </div>
+                          )}
+                        </div>
+
+                        <Link
+                          href={`/products/${product.id}`}
+                          className="min-w-0 truncate text-sm font-semibold text-[var(--foreground)]"
+                        >
+                          {
+                            product.name
+                          }
+                        </Link>
+                      </div>
+
+                      <div className="text-sm font-medium text-[var(--foreground)]">
+                        {product.version
+                          ? `v${product.version}`
+                          : "—"}
+                      </div>
+
+                      <div className="text-sm text-[var(--muted)]">
+                        {formatDate(
+                          ownership.purchased_at
+                        )}
+                      </div>
+
+                      <div>
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${statusClass(
+                            ownership.status
+                          )}`}
+                        >
+                          {
+                            ownership.status
+                          }
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Link
+                          href={`/products/${product.id}`}
+                          aria-label={`View ${product.name}`}
+                          title="View product"
+                          className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border)] text-[var(--muted)]"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Link>
+
+                        {activeOwnership && (
+                          <a
+                            href={`/products/${product.id}/download`}
+                            aria-label={`Download ${product.name}`}
+                            title="Download"
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border)] text-[var(--primary)]"
+                          >
+                            <Download className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+              )}
             </div>
           </div>
 
-          {/* DESKTOP TABLE */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-[var(--border-light)] bg-[var(--surface-secondary)]">
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                    Product
-                  </th>
-
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                    Version
-                  </th>
-
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                    Purchased
-                  </th>
-
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                    Status
-                  </th>
-
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {items.map(
-                  ({
-                    product,
-                    ownership,
-                  }) => {
-                    const activeOwnership =
-                      ownership.status === "active";
-
-                    return (
-                      <tr
-                        key={ownership.id}
-                        className="border-b border-[var(--border-light)] last:border-b-0 hover:bg-[var(--surface-hover)]"
-                      >
-                        {/* PRODUCT */}
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-4">
-                            <div className="flex h-12 w-16 shrink-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-secondary)]">
-                              {product.image_url ? (
-                                <img
-                                  src={
-                                    product.image_url
-                                  }
-                                  alt={
-                                    product.name
-                                  }
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center">
-                                  <Package className="h-5 w-5 text-[var(--muted-light)]" />
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="min-w-0">
-                              <Link
-                                href={`/products/${product.id}`}
-                                className="block truncate text-sm font-semibold text-[var(--foreground)] transition-colors hover:text-[var(--primary)]"
-                              >
-                                {product.name}
-                              </Link>
-
-                              <p className="mt-1 max-w-[340px] truncate text-xs text-[var(--muted)]">
-                                {product.short_description ||
-                                  "Embernix product"}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* VERSION */}
-                        <td className="px-6 py-4">
-                          {product.version ? (
-                            <span className="inline-flex rounded-lg bg-[var(--primary-soft)] px-2.5 py-1 text-xs font-medium text-[var(--primary)]">
-                              v{product.version}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-[var(--muted-light)]">
-                              —
-                            </span>
-                          )}
-                        </td>
-
-                        {/* PURCHASE DATE */}
-                        <td className="px-6 py-4 text-sm text-[var(--muted)]">
-                          {formatDate(
-                            ownership.purchased_at
-                          )}
-                        </td>
-
-                        {/* STATUS */}
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
-                              activeOwnership
-                                ? "bg-green-50 text-green-700"
-                                : ownership.status ===
-                                    "refunded"
-                                  ? "bg-amber-50 text-amber-700"
-                                  : "bg-gray-100 text-gray-600"
-                            }`}
-                          >
-                            {ownership.status}
-                          </span>
-                        </td>
-
-                        {/* ACTIONS */}
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <Link
-                              href={`/products/${product.id}`}
-                              className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-3 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                              View
-                            </Link>
-
-                            {activeOwnership && (
-                              <a
-                                href={`/products/${product.id}/download`}
-                                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--primary)] px-3 text-sm font-medium text-white transition-colors hover:bg-[var(--primary-hover)]"
-                              >
-                                <Download className="h-4 w-4" />
-                                Download
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* MOBILE TABLE-LIKE ROWS */}
+          {/* Mobile */}
           <div className="divide-y divide-[var(--border-light)] md:hidden">
             {items.map(
               ({
@@ -320,12 +391,15 @@ export default async function ProductsPage() {
                 ownership,
               }) => {
                 const activeOwnership =
-                  ownership.status === "active";
+                  ownership.status ===
+                  "active";
 
                 return (
                   <div
-                    key={ownership.id}
-                    className="p-4"
+                    key={
+                      ownership.id
+                    }
+                    className="p-4 sm:p-5"
                   >
                     <div className="flex items-start gap-3">
                       <div className="flex h-12 w-16 shrink-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-secondary)]">
@@ -341,7 +415,7 @@ export default async function ProductsPage() {
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center">
-                            <Package className="h-5 w-5 text-[var(--muted-light)]" />
+                            <Package className="h-4 w-4 text-[var(--muted-light)]" />
                           </div>
                         )}
                       </div>
@@ -349,13 +423,14 @@ export default async function ProductsPage() {
                       <div className="min-w-0 flex-1">
                         <Link
                           href={`/products/${product.id}`}
-                          className="block truncate text-sm font-semibold hover:text-[var(--primary)]"
+                          className="block truncate text-sm font-semibold text-[var(--foreground)]"
                         >
-                          {product.name}
+                          {
+                            product.name
+                          }
                         </Link>
 
                         <p className="mt-1 text-xs text-[var(--muted)]">
-                          Purchased{" "}
                           {formatDate(
                             ownership.purchased_at
                           )}
@@ -363,42 +438,43 @@ export default async function ProductsPage() {
                       </div>
 
                       <span
-                        className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium capitalize ${
-                          activeOwnership
-                            ? "bg-green-50 text-green-700"
-                            : "bg-gray-100 text-gray-600"
-                        }`}
+                        className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium capitalize ${statusClass(
+                          ownership.status
+                        )}`}
                       >
-                        {ownership.status}
+                        {
+                          ownership.status
+                        }
                       </span>
                     </div>
 
-                    <div className="mt-4 flex items-center justify-between">
+                    <div className="mt-4 flex items-end justify-between gap-4">
                       <div>
-                        <p className="text-[11px] uppercase tracking-wide text-[var(--muted-light)]">
+                        <p className="text-[11px] font-medium text-[var(--muted)]">
                           Version
                         </p>
 
-                        <p className="mt-1 text-sm font-medium">
+                        <p className="mt-1 text-sm font-semibold">
                           {product.version
                             ? `v${product.version}`
                             : "—"}
                         </p>
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-1.5">
                         <Link
                           href={`/products/${product.id}`}
-                          className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] px-3 text-sm font-medium"
+                          aria-label="View product"
+                          className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border)] text-[var(--muted)]"
                         >
-                          <ExternalLink className="h-4 w-4" />
-                          View
+                          <Eye className="h-4 w-4" />
                         </Link>
 
                         {activeOwnership && (
                           <a
                             href={`/products/${product.id}/download`}
-                            className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--primary)] px-3 text-sm font-medium text-white"
+                            aria-label="Download product"
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border)] text-[var(--primary)]"
                           >
                             <Download className="h-4 w-4" />
                           </a>
@@ -410,8 +486,31 @@ export default async function ProductsPage() {
               }
             )}
           </div>
-        </div>
+        </section>
       )}
+    </div>
+  );
+}
+
+function TableHeading({
+  children,
+  right = false,
+}: {
+  children:
+    React.ReactNode;
+  right?: boolean;
+}) {
+  return (
+    <div
+      className={`text-xs font-semibold text-[var(--muted)] ${
+        right
+          ? "text-right"
+          : ""
+      }`}
+    >
+      {
+        children
+      }
     </div>
   );
 }

@@ -3,10 +3,8 @@ import Link from "next/link";
 import {
   ArrowLeft,
   CalendarDays,
-  CircleDollarSign,
   FileText,
   LoaderCircle,
-  ReceiptText,
 } from "lucide-react";
 
 import {
@@ -50,15 +48,19 @@ function formatMoney(
           "USD",
       }
     ).format(
-      cents / 100
+      cents /
+        100
     );
   } catch {
     return `${
       currency ||
       "USD"
     } ${(
-      cents / 100
-    ).toFixed(2)}`;
+      cents /
+      100
+    ).toFixed(
+      2
+    )}`;
   }
 }
 
@@ -72,7 +74,9 @@ function formatDate(
   }
 
   const date =
-    new Date(value);
+    new Date(
+      value
+    );
 
   if (
     Number.isNaN(
@@ -97,7 +101,9 @@ function formatDate(
 function statusClass(
   status: string
 ) {
-  switch (status) {
+  switch (
+    status
+  ) {
     case "paid":
       return "bg-green-50 text-green-700";
 
@@ -133,20 +139,27 @@ export default async function ClientInvoiceDetailPage({
     await createClient();
 
   const {
-    data: { user },
+    data: {
+      user,
+    },
   } =
     await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect(
+      "/login"
+    );
   }
 
   const {
-    data: invoice,
+    data:
+      invoice,
     error:
       invoiceError,
   } = await supabase
-    .from("invoices")
+    .from(
+      "invoices"
+    )
     .select(`
       id,
       invoice_number,
@@ -187,7 +200,8 @@ export default async function ClientInvoiceDetailPage({
   }
 
   const {
-    data: items,
+    data:
+      items,
     error:
       itemsError,
   } = await supabase
@@ -210,18 +224,22 @@ export default async function ClientInvoiceDetailPage({
     .order(
       "sort_order",
       {
-        ascending: true,
+        ascending:
+          true,
       }
     );
 
-  if (itemsError) {
+  if (
+    itemsError
+  ) {
     throw new Error(
       "Unable to load invoice items."
     );
   }
 
   const rows =
-    items ?? [];
+    items ??
+    [];
 
   const processing =
     query.payment ===
@@ -230,54 +248,20 @@ export default async function ClientInvoiceDetailPage({
       "unpaid";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-[1100px] space-y-5">
       <InvoicePaymentStatusWatcher
         enabled={
           processing
         }
       />
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <Link
-            href="/invoices"
-            className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
-          >
-            <ArrowLeft className="h-4 w-4" />
-
-            Invoices
-          </Link>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <h1 className="font-mono text-2xl font-semibold">
-              {
-                invoice.invoice_number
-              }
-            </h1>
-
-            <span
-              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium capitalize ${statusClass(
-                invoice.status
-              )}`}
-            >
-              {invoice.status}
-            </span>
-          </div>
-
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            Created{" "}
-            {formatDate(
-              invoice.created_at
-            )}
-          </p>
-        </div>
-
-        <DownloadInvoiceButton
-          invoiceId={
-            invoice.id
-          }
-        />
-      </div>
+      <Link
+        href="/invoices"
+        className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)]"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Invoices
+      </Link>
 
       {processing && (
         <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
@@ -296,131 +280,121 @@ export default async function ClientInvoiceDetailPage({
           </div>
         )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <CircleDollarSign className="h-5 w-5" />
-            </div>
-
+      <section className="overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--surface)]">
+        <div className="border-b border-[var(--border)] px-5 py-6 sm:px-7">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-xs text-[var(--muted)]">
-                Total
-              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="font-mono text-[23px] font-semibold tracking-[-0.02em] sm:text-[27px]">
+                  {
+                    invoice.invoice_number
+                  }
+                </h1>
 
-              <p className="mt-1 text-lg font-semibold">
-                {formatMoney(
-                  Number(
-                    invoice.total_cents ??
-                      0
-                  ),
-                  invoice.currency
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${statusClass(
+                    invoice.status
+                  )}`}
+                >
+                  {
+                    invoice.status
+                  }
+                </span>
+              </div>
 
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <CalendarDays className="h-5 w-5" />
-            </div>
-
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Issued
-              </p>
-
-              <p className="mt-1 text-sm font-medium">
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                Created{" "}
                 {formatDate(
-                  invoice.issued_at
+                  invoice.created_at
                 )}
               </p>
             </div>
+
+            <DownloadInvoiceButton
+              invoiceId={
+                invoice.id
+              }
+            />
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <CalendarDays className="h-5 w-5" />
+        <div className="grid gap-px border-b border-[var(--border)] bg-[var(--border)] sm:grid-cols-3">
+          <SummaryItem
+            label="Total"
+            value={formatMoney(
+              Number(
+                invoice.total_cents ??
+                  0
+              ),
+              invoice.currency
+            )}
+            large
+          />
+
+          <SummaryItem
+            label="Issued"
+            value={formatDate(
+              invoice.issued_at
+            )}
+          />
+
+          <SummaryItem
+            label="Due"
+            value={formatDate(
+              invoice.due_at
+            )}
+          />
+        </div>
+
+        <div className="px-5 py-6 sm:px-7">
+          <h2 className="text-base font-semibold">
+            Invoice items
+          </h2>
+
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Items included in this invoice.
+          </p>
+
+          {rows.length ===
+          0 ? (
+            <div className="mt-5 rounded-xl border border-[var(--border)] px-4 py-6 text-center text-sm text-[var(--muted)]">
+              No invoice items found.
             </div>
-
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Due
-              </p>
-
-              <p className="mt-1 text-sm font-medium">
-                {formatDate(
-                  invoice.due_at
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-        <div className="flex items-center gap-3 border-b border-[var(--border-light)] px-6 py-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-            <ReceiptText className="h-4 w-4" />
-          </div>
-
-          <div>
-            <h2 className="font-semibold">
-              Invoice items
-            </h2>
-
-            <p className="mt-0.5 text-xs text-[var(--muted)]">
-              Services and items included in this invoice.
-            </p>
-          </div>
-        </div>
-
-        {rows.length ===
-        0 ? (
-          <div className="p-6 text-sm text-[var(--muted)]">
-            No invoice items found.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="border-b border-[var(--border-light)] bg-[var(--surface-secondary)]">
-                <tr>
-                  <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
+          ) : (
+            <div className="mt-5 overflow-hidden rounded-[16px] border border-[var(--border)]">
+              {/* Desktop */}
+              <div className="hidden md:block">
+                <div className="grid grid-cols-[minmax(200px,1fr)_70px_130px_130px] border-b border-[var(--border)] bg-[var(--surface-secondary)] px-4 py-3">
+                  <InvoiceHeading>
                     Item
-                  </th>
+                  </InvoiceHeading>
 
-                  <th className="px-5 py-3 text-center text-xs font-semibold text-[var(--muted)]">
+                  <InvoiceHeading center>
                     Qty
-                  </th>
+                  </InvoiceHeading>
 
-                  <th className="px-5 py-3 text-right text-xs font-semibold text-[var(--muted)]">
+                  <InvoiceHeading right>
                     Unit price
-                  </th>
+                  </InvoiceHeading>
 
-                  <th className="px-5 py-3 text-right text-xs font-semibold text-[var(--muted)]">
+                  <InvoiceHeading right>
                     Total
-                  </th>
-                </tr>
-              </thead>
+                  </InvoiceHeading>
+                </div>
 
-              <tbody>
                 {rows.map(
-                  (item) => (
-                    <tr
+                  (
+                    item
+                  ) => (
+                    <div
                       key={
                         item.id
                       }
-                      className="border-b border-[var(--border-light)] last:border-b-0"
+                      className="grid grid-cols-[minmax(200px,1fr)_70px_130px_130px] items-start border-b border-[var(--border-light)] px-4 py-4 last:border-b-0"
                     >
-                      <td className="px-5 py-4">
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-secondary)]">
-                            <FileText className="h-4 w-4 text-[var(--muted)]" />
-                          </div>
+                      <div className="min-w-0">
+                        <div className="flex items-start gap-2.5">
+                          <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[var(--muted)]" />
 
                           <div>
                             <p className="text-sm font-medium">
@@ -438,100 +412,142 @@ export default async function ClientInvoiceDetailPage({
                             )}
                           </div>
                         </div>
-                      </td>
+                      </div>
 
-                      <td className="px-5 py-4 text-center text-sm">
+                      <p className="text-center text-sm">
                         {
                           item.quantity
                         }
-                      </td>
+                      </p>
 
-                      <td className="px-5 py-4 text-right text-sm">
+                      <p className="text-right text-sm">
                         {formatMoney(
                           Number(
                             item.unit_price_cents
                           ),
                           invoice.currency
                         )}
-                      </td>
+                      </p>
 
-                      <td className="px-5 py-4 text-right text-sm font-semibold">
+                      <p className="text-right text-sm font-semibold">
                         {formatMoney(
                           Number(
                             item.line_total_cents
                           ),
                           invoice.currency
                         )}
-                      </td>
-                    </tr>
+                      </p>
+                    </div>
                   )
                 )}
-              </tbody>
-            </table>
-          </div>
-        )}
+              </div>
 
-        <div className="border-t border-[var(--border-light)] px-6 py-5">
-          <div className="ml-auto max-w-sm space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-[var(--muted)]">
-                Subtotal
-              </span>
+              {/* Mobile */}
+              <div className="divide-y divide-[var(--border-light)] md:hidden">
+                {rows.map(
+                  (
+                    item
+                  ) => (
+                    <div
+                      key={
+                        item.id
+                      }
+                      className="p-4"
+                    >
+                      <p className="text-sm font-semibold">
+                        {
+                          item.title
+                        }
+                      </p>
 
-              <span>
-                {formatMoney(
-                  Number(
-                    invoice.subtotal_cents ??
-                      0
-                  ),
-                  invoice.currency
+                      {item.description && (
+                        <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+                          {
+                            item.description
+                          }
+                        </p>
+                      )}
+
+                      <div className="mt-4 grid grid-cols-3 gap-3">
+                        <MiniValue
+                          label="Qty"
+                          value={String(
+                            item.quantity
+                          )}
+                        />
+
+                        <MiniValue
+                          label="Unit"
+                          value={formatMoney(
+                            Number(
+                              item.unit_price_cents
+                            ),
+                            invoice.currency
+                          )}
+                        />
+
+                        <MiniValue
+                          label="Total"
+                          value={formatMoney(
+                            Number(
+                              item.line_total_cents
+                            ),
+                            invoice.currency
+                          )}
+                          strong
+                        />
+                      </div>
+                    </div>
+                  )
                 )}
-              </span>
+              </div>
             </div>
+          )}
+
+          <div className="ml-auto mt-6 max-w-sm space-y-3">
+            <MoneyRow
+              label="Subtotal"
+              value={formatMoney(
+                Number(
+                  invoice.subtotal_cents ??
+                    0
+                ),
+                invoice.currency
+              )}
+            />
 
             {Number(
               invoice.discount_cents ??
                 0
             ) > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-[var(--muted)]">
-                  Discount
-                </span>
-
-                <span>
-                  -
-                  {formatMoney(
-                    Number(
-                      invoice.discount_cents
-                    ),
-                    invoice.currency
-                  )}
-                </span>
-              </div>
+              <MoneyRow
+                label="Discount"
+                value={`-${formatMoney(
+                  Number(
+                    invoice.discount_cents
+                  ),
+                  invoice.currency
+                )}`}
+              />
             )}
 
             {Number(
               invoice.tax_cents ??
                 0
             ) > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-[var(--muted)]">
-                  Tax
-                </span>
-
-                <span>
-                  {formatMoney(
-                    Number(
-                      invoice.tax_cents
-                    ),
-                    invoice.currency
-                  )}
-                </span>
-              </div>
+              <MoneyRow
+                label="Tax"
+                value={formatMoney(
+                  Number(
+                    invoice.tax_cents
+                  ),
+                  invoice.currency
+                )}
+              />
             )}
 
             <div className="border-t border-[var(--border)] pt-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-6">
                 <span className="font-semibold">
                   Total
                 </span>
@@ -551,96 +567,94 @@ export default async function ClientInvoiceDetailPage({
         </div>
       </section>
 
-      <div className="grid gap-6 sm:grid-cols-2">
-        <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-          <h2 className="font-semibold">
+      <section className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
+          <h2 className="text-sm font-semibold">
             Payment
           </h2>
 
           <div className="mt-5 space-y-4">
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Status
-              </p>
+            <DetailValue
+              label="Status"
+            >
+              <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${statusClass(
+                  invoice.status
+                )}`}
+              >
+                {
+                  invoice.status
+                }
+              </span>
+            </DetailValue>
 
-              <div className="mt-2">
-                <span
-                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${statusClass(
-                    invoice.status
-                  )}`}
-                >
-                  {
-                    invoice.status
-                  }
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Paid date
-              </p>
-
-              <p className="mt-1 text-sm font-medium">
-                {formatDate(
+            <DetailValue
+              label="Paid date"
+            >
+              {
+                formatDate(
                   invoice.paid_at
-                )}
-              </p>
-            </div>
+                )
+              }
+            </DetailValue>
 
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Payment provider
-              </p>
-
-              <p className="mt-1 text-sm font-medium capitalize">
+            <DetailValue
+              label="Provider"
+            >
+              <span className="capitalize">
                 {invoice.payment_provider ||
                   "—"}
-              </p>
-            </div>
+              </span>
+            </DetailValue>
           </div>
-        </section>
+        </div>
 
-        <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-          <h2 className="font-semibold">
-            Invoice
+        <div className="rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
+          <h2 className="text-sm font-semibold">
+            Invoice details
           </h2>
 
           <div className="mt-5 space-y-4">
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Invoice number
-              </p>
-
-              <p className="mt-1 font-mono text-sm font-medium">
+            <DetailValue
+              label="Invoice number"
+            >
+              <span className="font-mono">
                 {
                   invoice.invoice_number
                 }
-              </p>
-            </div>
+              </span>
+            </DetailValue>
 
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Currency
-              </p>
+            <DetailValue
+              label="Currency"
+            >
+              {
+                invoice.currency
+              }
+            </DetailValue>
 
-              <p className="mt-1 text-sm font-medium">
-                {
-                  invoice.currency
-                }
-              </p>
-            </div>
+            {invoice.paddle_transaction_id && (
+              <DetailValue
+                label="Transaction"
+              >
+                <span className="break-all font-mono text-xs">
+                  {
+                    invoice.paddle_transaction_id
+                  }
+                </span>
+              </DetailValue>
+            )}
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
       {invoice.notes && (
-        <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-          <h2 className="font-semibold">
+        <section className="rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
+          <h2 className="text-sm font-semibold">
             Notes
           </h2>
 
-          <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[var(--muted)]">
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--muted)]">
             {
               invoice.notes
             }
@@ -651,13 +665,13 @@ export default async function ClientInvoiceDetailPage({
       {invoice.status ===
         "unpaid" &&
         !processing && (
-          <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-            <div className="mx-auto max-w-md">
-              <h2 className="text-center font-semibold">
+          <section className="rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
+            <div className="mx-auto max-w-md text-center">
+              <h2 className="font-semibold">
                 Payment required
               </h2>
 
-              <p className="mt-2 text-center text-sm text-[var(--muted)]">
+              <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
                 Pay{" "}
                 {formatMoney(
                   Number(
@@ -678,6 +692,148 @@ export default async function ClientInvoiceDetailPage({
             </div>
           </section>
         )}
+    </div>
+  );
+}
+
+function SummaryItem({
+  label,
+  value,
+  large = false,
+}: {
+  label: string;
+  value: string;
+  large?: boolean;
+}) {
+  return (
+    <div className="bg-[var(--surface)] p-4 sm:p-5">
+      <div className="flex items-center gap-2 text-xs font-medium text-[var(--muted)]">
+        <CalendarDays className="h-3.5 w-3.5" />
+
+        {
+          label
+        }
+      </div>
+
+      <p
+        className={`mt-2 font-semibold text-[var(--foreground)] ${
+          large
+            ? "text-xl"
+            : "text-sm"
+        }`}
+      >
+        {
+          value
+        }
+      </p>
+    </div>
+  );
+}
+
+function InvoiceHeading({
+  children,
+  right = false,
+  center = false,
+}: {
+  children:
+    React.ReactNode;
+  right?: boolean;
+  center?: boolean;
+}) {
+  return (
+    <div
+      className={`text-xs font-semibold text-[var(--muted)] ${
+        right
+          ? "text-right"
+          : center
+            ? "text-center"
+            : ""
+      }`}
+    >
+      {
+        children
+      }
+    </div>
+  );
+}
+
+function MiniValue({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] text-[var(--muted)]">
+        {
+          label
+        }
+      </p>
+
+      <p
+        className={`mt-1 text-xs ${
+          strong
+            ? "font-semibold"
+            : "font-medium"
+        }`}
+      >
+        {
+          value
+        }
+      </p>
+    </div>
+  );
+}
+
+function MoneyRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex justify-between gap-6 text-sm">
+      <span className="text-[var(--muted)]">
+        {
+          label
+        }
+      </span>
+
+      <span>
+        {
+          value
+        }
+      </span>
+    </div>
+  );
+}
+
+function DetailValue({
+  label,
+  children,
+}: {
+  label: string;
+  children:
+    React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-[var(--muted)]">
+        {
+          label
+        }
+      </p>
+
+      <div className="mt-1.5 text-sm font-medium">
+        {
+          children
+        }
+      </div>
     </div>
   );
 }
