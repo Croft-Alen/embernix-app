@@ -1,30 +1,27 @@
 import {
   Package,
+  Wrench,
 } from "lucide-react";
 
 import type {
   AppliedCoupon,
 } from "@/components/checkout/CouponInput";
 
-type Product = {
+type CheckoutItemType =
+  | "product"
+  | "service";
+
+type CheckoutItem = {
   name: string;
-
-  image_url:
-    | string
-    | null;
-
-  version:
-    | string
-    | null;
-
+  image_url: string | null;
+  version: string | null;
   price_cents: number;
-
   currency: string;
 };
 
 type OrderSummaryProps = {
-  product: Product;
-
+  item: CheckoutItem;
+  itemType: CheckoutItemType;
   appliedCoupon:
     | AppliedCoupon
     | null;
@@ -37,13 +34,9 @@ function formatPrice(
   return new Intl.NumberFormat(
     "en-US",
     {
-      style:
-        "currency",
-
+      style: "currency",
       currency,
-
-      minimumFractionDigits:
-        2,
+      minimumFractionDigits: 2,
     }
   ).format(
     cents / 100
@@ -51,14 +44,16 @@ function formatPrice(
 }
 
 export default function OrderSummary({
-  product,
+  item,
+  itemType,
   appliedCoupon,
 }: OrderSummaryProps) {
   const subtotal =
-    product.price_cents;
+    item.price_cents;
 
   const discount =
-    appliedCoupon?.discountCents ??
+    appliedCoupon
+      ?.discountCents ??
     0;
 
   const total =
@@ -70,22 +65,26 @@ export default function OrderSummary({
 
   return (
     <>
-      {/* ITEM */}
       <div className="flex items-start gap-4">
         <div className="flex h-16 w-20 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-secondary)]">
-          {product.image_url ? (
+          {item.image_url ? (
             <img
               src={
-                product.image_url
+                item.image_url
               }
               alt={
-                product.name
+                item.name
               }
               className="h-full w-full object-cover"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
-              <Package className="h-5 w-5 text-[var(--muted)]" />
+              {itemType ===
+              "service" ? (
+                <Wrench className="h-5 w-5 text-[var(--muted)]" />
+              ) : (
+                <Package className="h-5 w-5 text-[var(--muted)]" />
+              )}
             </div>
           )}
         </div>
@@ -94,17 +93,24 @@ export default function OrderSummary({
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="font-semibold">
-                {
-                  product.name
-                }
+                {item.name}
               </p>
 
-              {product.version && (
+              {itemType ===
+                "product" &&
+                item.version && (
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    Version{" "}
+                    {
+                      item.version
+                    }
+                  </p>
+                )}
+
+              {itemType ===
+                "service" && (
                 <p className="mt-1 text-xs text-[var(--muted)]">
-                  Version{" "}
-                  {
-                    product.version
-                  }
+                  Professional service
                 </p>
               )}
             </div>
@@ -112,7 +118,7 @@ export default function OrderSummary({
             <p className="shrink-0 text-sm font-semibold">
               {formatPrice(
                 subtotal,
-                product.currency
+                item.currency
               )}
             </p>
           </div>
@@ -121,7 +127,6 @@ export default function OrderSummary({
 
       <div className="my-6 border-t border-[var(--border-light)]" />
 
-      {/* TOTALS */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-sm">
           <span className="text-[var(--muted)]">
@@ -131,7 +136,7 @@ export default function OrderSummary({
           <span>
             {formatPrice(
               subtotal,
-              product.currency
+              item.currency
             )}
           </span>
         </div>
@@ -151,7 +156,7 @@ export default function OrderSummary({
                 -
                 {formatPrice(
                   discount,
-                  product.currency
+                  item.currency
                 )}
               </span>
             </div>
@@ -177,16 +182,14 @@ export default function OrderSummary({
           </p>
 
           <p className="mt-1 text-xs uppercase text-[var(--muted)]">
-            {
-              product.currency
-            }
+            {item.currency}
           </p>
         </div>
 
         <p className="text-2xl font-semibold tracking-tight">
           {formatPrice(
             total,
-            product.currency
+            item.currency
           )}
         </p>
       </div>

@@ -17,7 +17,11 @@ import OrderSummary from "@/components/checkout/OrderSummary";
 
 import PaddleCheckoutButton from "@/components/checkout/PaddleCheckoutButton";
 
-type Product = {
+export type CheckoutItemType =
+  | "product"
+  | "service";
+
+type CheckoutItem = {
   name: string;
   image_url: string | null;
   version: string | null;
@@ -26,15 +30,17 @@ type Product = {
 };
 
 type CheckoutFormProps = {
-  productSlug: string;
+  itemType: CheckoutItemType;
+  itemSlug: string;
   email: string;
-  product: Product;
+  item: CheckoutItem;
 };
 
 export default function CheckoutForm({
-  productSlug,
+  itemType,
+  itemSlug,
   email,
-  product,
+  item,
 }: CheckoutFormProps) {
   const [
     acceptedTerms,
@@ -44,13 +50,13 @@ export default function CheckoutForm({
   const [
     appliedCoupon,
     setAppliedCoupon,
-  ] = useState<AppliedCoupon | null>(
-    null
-  );
+  ] =
+    useState<AppliedCoupon | null>(
+      null
+    );
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-      {/* LEFT */}
       <div className="rounded-2xl border border-[var(--border)] bg-white p-6 sm:p-7">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
@@ -70,31 +76,35 @@ export default function CheckoutForm({
 
         <div className="mt-6">
           <OrderSummary
-            product={product}
+            item={item}
+            itemType={itemType}
             appliedCoupon={
               appliedCoupon
             }
           />
         </div>
 
-        <div className="mt-7 border-t border-[var(--border-light)] pt-6">
-          <CouponInput
-            productSlug={
-              productSlug
-            }
-            appliedCoupon={
-              appliedCoupon
-            }
-            onApply={
-              setAppliedCoupon
-            }
-            onRemove={() =>
-              setAppliedCoupon(
-                null
-              )
-            }
-          />
-        </div>
+        {itemType ===
+          "product" && (
+          <div className="mt-7 border-t border-[var(--border-light)] pt-6">
+            <CouponInput
+              productSlug={
+                itemSlug
+              }
+              appliedCoupon={
+                appliedCoupon
+              }
+              onApply={
+                setAppliedCoupon
+              }
+              onRemove={() =>
+                setAppliedCoupon(
+                  null
+                )
+              }
+            />
+          </div>
+        )}
 
         <div className="mt-7 border-t border-[var(--border-light)] pt-6">
           <p className="text-xs text-[var(--muted)]">
@@ -107,7 +117,6 @@ export default function CheckoutForm({
         </div>
       </div>
 
-      {/* RIGHT */}
       <aside className="h-fit rounded-2xl border border-[var(--border)] bg-white p-6 lg:sticky lg:top-24">
         <h2 className="text-lg font-semibold">
           Checkout
@@ -158,14 +167,25 @@ export default function CheckoutForm({
         </div>
 
         <div className="mt-6">
-        <PaddleCheckoutButton
-  productSlug={productSlug}
-  acceptedTerms={acceptedTerms}
-  couponCode={
-    appliedCoupon?.code ??
-    null
-  }
-/>
+          <PaddleCheckoutButton
+            itemType={
+              itemType
+            }
+            itemSlug={
+              itemSlug
+            }
+            acceptedTerms={
+              acceptedTerms
+            }
+            couponCode={
+              itemType ===
+              "product"
+                ? appliedCoupon
+                    ?.code ??
+                  null
+                : null
+            }
+          />
         </div>
       </aside>
     </div>

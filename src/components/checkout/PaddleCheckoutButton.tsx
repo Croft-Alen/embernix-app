@@ -12,16 +12,19 @@ import {
 
 import {
   prepareCheckoutOrder,
+  type CheckoutItemType,
 } from "@/app/checkout/actions";
 
 type PaddleCheckoutButtonProps = {
-  productSlug: string;
+  itemType: CheckoutItemType;
+  itemSlug: string;
   acceptedTerms: boolean;
   couponCode?: string | null;
 };
 
 export default function PaddleCheckoutButton({
-  productSlug,
+  itemType,
+  itemSlug,
   acceptedTerms,
   couponCode,
 }: PaddleCheckoutButtonProps) {
@@ -33,9 +36,10 @@ export default function PaddleCheckoutButton({
   const [
     error,
     setError,
-  ] = useState<string | null>(
-    null
-  );
+  ] =
+    useState<string | null>(
+      null
+    );
 
   async function handleCheckout() {
     if (loading) {
@@ -56,7 +60,8 @@ export default function PaddleCheckoutButton({
     try {
       const preparation =
         await prepareCheckoutOrder(
-          productSlug,
+          itemType,
+          itemSlug,
           acceptedTerms
         );
 
@@ -77,17 +82,14 @@ export default function PaddleCheckoutButton({
         );
       }
 
-      /*
-       * IMPORTANT:
-       *
-       * Capture exactly what CheckoutForm
-       * passed to this component.
-       */
       const normalizedCoupon =
-        couponCode
-          ?.trim()
-          .toUpperCase() ||
-        null;
+        itemType ===
+        "product"
+          ? couponCode
+              ?.trim()
+              .toUpperCase() ||
+            null
+          : null;
 
       const response =
         await fetch(
@@ -100,13 +102,14 @@ export default function PaddleCheckoutButton({
                 "application/json",
             },
 
-            body: JSON.stringify({
-              orderNumber:
-                preparation.orderNumber,
+            body:
+              JSON.stringify({
+                orderNumber:
+                  preparation.orderNumber,
 
-              couponCode:
-                normalizedCoupon,
-            }),
+                couponCode:
+                  normalizedCoupon,
+              }),
           }
         );
 
@@ -114,8 +117,12 @@ export default function PaddleCheckoutButton({
         (await response.json()) as {
           checkoutUrl?: string;
           transactionId?: string;
-          couponCode?: string | null;
-          discountId?: string | null;
+          couponCode?:
+            | string
+            | null;
+          discountId?:
+            | string
+            | null;
           alreadyPaid?: boolean;
           error?: string;
         };
@@ -143,7 +150,9 @@ export default function PaddleCheckoutButton({
 
       window.location.href =
         data.checkoutUrl;
-    } catch (checkoutError) {
+    } catch (
+      checkoutError
+    ) {
       console.error(
         "Checkout error:",
         checkoutError
@@ -182,11 +191,13 @@ export default function PaddleCheckoutButton({
         {loading ? (
           <>
             <LoaderCircle className="h-4 w-4 animate-spin" />
+
             Redirecting...
           </>
         ) : (
           <>
             Continue to checkout
+
             <ArrowRight className="h-4 w-4" />
           </>
         )}
@@ -194,6 +205,7 @@ export default function PaddleCheckoutButton({
 
       <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-[var(--muted)]">
         <LockKeyhole className="h-3.5 w-3.5" />
+
         Secure checkout by Paddle
       </div>
     </div>
