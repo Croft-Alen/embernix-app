@@ -119,6 +119,10 @@ export default async function ClientLayout({
           isAdmin={
             isAdmin
           }
+          userId={
+    user.id
+  }
+
         />
 
         <div className="mt-4 lg:grid lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start lg:gap-5">

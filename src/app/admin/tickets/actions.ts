@@ -61,6 +61,8 @@ async function requireAdmin() {
   const {
     data:
       adminUser,
+    error:
+      adminError,
   } = await admin
     .from(
       "admin_users"
@@ -75,6 +77,7 @@ async function requireAdmin() {
     .maybeSingle();
 
   if (
+    adminError ||
     !adminUser
   ) {
     redirect(
@@ -131,7 +134,7 @@ export async function adminReplyToTicket(
       "tickets"
     )
     .select(
-      "id, status"
+      "id, user_id, status"
     )
     .eq(
       "id",
@@ -154,6 +157,8 @@ export async function adminReplyToTicket(
   }
 
   const {
+    data:
+      reply,
     error:
       replyError,
   } = await admin
@@ -171,10 +176,15 @@ export async function adminReplyToTicket(
 
       is_admin:
         true,
-    });
+    })
+    .select(
+      "id"
+    )
+    .single();
 
   if (
-    replyError
+    replyError ||
+    !reply
   ) {
     console.error(
       "Failed to create admin ticket reply:",
@@ -196,7 +206,10 @@ export async function adminReplyToTicket(
         ? "in_progress"
         : ticket.status;
 
-  await admin
+  const {
+    error:
+      ticketUpdateError,
+  } = await admin
     .from(
       "tickets"
     )
@@ -214,6 +227,43 @@ export async function adminReplyToTicket(
       "id",
       ticket.id
     );
+
+  if (
+    ticketUpdateError
+  ) {
+    console.error(
+      "Failed to update ticket after admin reply:",
+      ticketUpdateError
+    );
+  }
+
+  await createNotification({
+    userId:
+      ticket.user_id,
+
+    type:
+      "ticket_reply",
+
+    title:
+      "New ticket reply",
+
+    message:
+      "Embernix replied to your ticket.",
+
+    href:
+      `/tickets/${ticket.id}`,
+
+    metadata: {
+      ticketId:
+        ticket.id,
+
+      replyId:
+        reply.id,
+    },
+
+    dedupeKey:
+      `ticket-reply:${reply.id}`,
+  });
 
   revalidatePath(
     `/admin/tickets/${ticket.id}`
@@ -233,6 +283,10 @@ export async function adminReplyToTicket(
 
   revalidatePath(
     "/dashboard"
+  );
+
+  revalidatePath(
+    "/notifications"
   );
 }
 
@@ -267,9 +321,18 @@ export async function updateTicketStatus(
     return;
   }
 
+  /*
+   * Fetch the current ticket first.
+   *
+   * We need the owner for notifications and the
+   * previous status so unchanged updates do not
+   * create another notification.
+   */
   const {
     data:
       ticket,
+    error:
+      ticketError,
   } = await admin
     .from(
       "tickets"
@@ -283,7 +346,23 @@ export async function updateTicketStatus(
     )
     .maybeSingle();
 
-  if (!ticket) {
+  if (
+    ticketError ||
+    !ticket
+  ) {
+    return;
+  }
+
+  /*
+   * Nothing changed.
+   *
+   * Avoid unnecessary DB writes and especially
+   * duplicate notifications.
+   */
+  if (
+    ticket.status ===
+    status
+  ) {
     return;
   }
 
@@ -291,7 +370,8 @@ export async function updateTicketStatus(
     new Date().toISOString();
 
   const {
-    error,
+    error:
+      updateError,
   } = await admin
     .from(
       "tickets"
@@ -310,87 +390,107 @@ export async function updateTicketStatus(
     })
     .eq(
       "id",
-      ticketId
+      ticket.id
     );
 
   if (
-    error
+    updateError
   ) {
     console.error(
       "Failed to update ticket status:",
-      error
+      updateError
     );
 
     return;
   }
 
+  /*
+   * Only meaningful customer-facing ticket
+   * state changes create notifications.
+   *
+   * open -> in_progress:
+   * no notification
+   *
+   * -> resolved:
+   * notify
+   *
+   * -> closed:
+   * notify
+   */
   if (
-    ticket.status !==
-    status
+    status ===
+    "resolved"
   ) {
-    if (
-      status ===
-      "resolved"
-    ) {
-      await createNotification({
-        userId:
-          ticket.user_id,
+    await createNotification({
+      userId:
+        ticket.user_id,
 
-        type:
-          "ticket_resolved",
+      type:
+        "ticket_resolved",
 
-        title:
-          "Ticket resolved",
+      title:
+        "Ticket resolved",
 
-        message:
-          "Your ticket has been marked as resolved.",
+      message:
+        "Your ticket has been marked as resolved.",
 
-        href:
-          `/tickets/${ticket.id}`,
+      href:
+        `/tickets/${ticket.id}`,
 
-        metadata: {
-          ticketId:
-            ticket.id,
-        },
+      metadata: {
+        ticketId:
+          ticket.id,
 
-        dedupeKey:
-          `ticket-status:${ticket.id}:resolved:${now}`,
-      });
-    }
+        previousStatus:
+          ticket.status,
 
-    if (
-      status ===
-      "closed"
-    ) {
-      await createNotification({
-        userId:
-          ticket.user_id,
+        status:
+          "resolved",
+      },
 
-        type:
-          "ticket_closed",
+      dedupeKey:
+        `ticket-status:${ticket.id}:resolved:${now}`,
+    });
+  }
 
-        title:
-          "Ticket closed",
+  if (
+    status ===
+    "closed"
+  ) {
+    await createNotification({
+      userId:
+        ticket.user_id,
 
-        message:
-          "Your ticket has been closed.",
+      type:
+        "ticket_closed",
 
-        href:
-          `/tickets/${ticket.id}`,
+      title:
+        "Ticket closed",
 
-        metadata: {
-          ticketId:
-            ticket.id,
-        },
+      message:
+        "Your ticket has been closed.",
 
-        dedupeKey:
-          `ticket-status:${ticket.id}:closed:${now}`,
-      });
-    }
+      href:
+        `/tickets/${ticket.id}`,
+
+      metadata: {
+        ticketId:
+          ticket.id,
+
+        previousStatus:
+          ticket.status,
+
+        status:
+          "closed",
+      },
+
+      dedupeKey:
+        `ticket-status:${ticket.id}:closed:${now}`,
+    });
   }
 
   revalidatePath(
-    `/admin/tickets/${ticketId}`
+    `/admin/tickets/${ticket.id}`
   );
 
   revalidatePath(
@@ -398,7 +498,7 @@ export async function updateTicketStatus(
   );
 
   revalidatePath(
-    `/tickets/${ticketId}`
+    `/tickets/${ticket.id}`
   );
 
   revalidatePath(
@@ -407,5 +507,9 @@ export async function updateTicketStatus(
 
   revalidatePath(
     "/dashboard"
+  );
+
+  revalidatePath(
+    "/notifications"
   );
 }

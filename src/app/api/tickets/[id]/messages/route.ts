@@ -1,11 +1,11 @@
 import {
+  randomUUID,
+} from "crypto";
+
+import {
   NextRequest,
   NextResponse,
 } from "next/server";
-
-import {
-  randomUUID,
-} from "crypto";
 
 import {
   createAdminClient,
@@ -42,11 +42,11 @@ const allowedTypes =
     "image/gif",
 
     "application/pdf",
+
     "application/zip",
     "application/x-zip-compressed",
 
     "text/plain",
-
     "application/json",
 
     "application/msword",
@@ -114,6 +114,8 @@ export async function POST(
     const {
       data:
         ticket,
+      error:
+        ticketError,
     } = await admin
       .from(
         "tickets"
@@ -129,7 +131,10 @@ export async function POST(
       )
       .maybeSingle();
 
-    if (!ticket) {
+    if (
+      ticketError ||
+      !ticket
+    ) {
       return NextResponse.json(
         {
           error:
@@ -508,7 +513,10 @@ export async function POST(
         "open";
     }
 
-    await admin
+    const {
+      error:
+        statusUpdateError,
+    } = await admin
       .from(
         "tickets"
       )
@@ -528,6 +536,21 @@ export async function POST(
       );
 
     if (
+      statusUpdateError
+    ) {
+      console.error(
+        "Failed to update ticket after reply:",
+        statusUpdateError
+      );
+    }
+
+    /*
+     * Notify the customer only when an admin replies.
+     *
+     * A customer must never receive a notification
+     * for their own message.
+     */
+    if (
       isAdmin
     ) {
       await createNotification({
@@ -541,7 +564,7 @@ export async function POST(
           "New ticket reply",
 
         message:
-          `Embernix replied to your ticket.`,
+          "Embernix replied to your ticket.",
 
         href:
           `/tickets/${ticket.id}`,
@@ -562,6 +585,12 @@ export async function POST(
     return NextResponse.json({
       success:
         true,
+
+      replyId:
+        reply.id,
+
+      status:
+        nextStatus,
     });
   } catch (
     error
