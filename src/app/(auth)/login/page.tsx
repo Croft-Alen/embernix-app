@@ -2,10 +2,15 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { login } from "../actions";
+
 import {
   signInWithDiscord,
   signInWithGoogle,
 } from "../oauth-actions";
+
+import {
+  redirectAuthenticatedUser,
+} from "@/lib/auth/redirect-authenticated";
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -17,45 +22,55 @@ type LoginPageProps = {
 export default async function LoginPage({
   searchParams,
 }: LoginPageProps) {
+  await redirectAuthenticatedUser();
+
   const { error, message } = await searchParams;
 
   return (
     <div>
-      <p
-        className="text-sm font-semibold uppercase tracking-[0.18em]"
-        style={{
-          color: "var(--primary)",
-        }}
-      >
-        Welcome Back
-      </p>
+      <div className="flex justify-center">
+        <img
+          src="/logo.webp"
+          alt="Embernix"
+          width={52}
+          height={52}
+          className="h-[52px] w-[52px] rounded-[14px] object-cover"
+        />
+      </div>
 
-      <div className="h-4" />
+      <div className="h-6" />
 
-      <h1 className="text-3xl font-semibold tracking-[-0.035em]">
-        Sign in to your account
-      </h1>
+      <div className="text-center">
+        <h1 className="text-3xl font-semibold tracking-[-0.035em]">
+          Sign in to your account
+        </h1>
 
-      <div className="h-3" />
+        <div className="h-3" />
 
-      <p
-        className="text-sm leading-6"
-        style={{
-          color: "var(--muted)",
-        }}
-      >
-        Enter your details to continue.
-      </p>
+        <p
+          className="text-sm leading-6"
+          style={{
+            color: "var(--muted)",
+          }}
+        >
+          Enter your details to continue.
+        </p>
+      </div>
 
-      {(error || message) && <div className="h-6" />}
+      {(error || message) && (
+        <div className="h-6" />
+      )}
 
       {error && (
         <div
           className="rounded-[14px] border px-4 py-3 text-sm leading-6"
           style={{
-            borderColor: "rgba(220,38,38,0.20)",
-            background: "var(--danger-soft)",
-            color: "var(--danger)",
+            borderColor:
+              "rgba(220,38,38,0.20)",
+            background:
+              "var(--danger-soft)",
+            color:
+              "var(--danger)",
           }}
         >
           {error}
@@ -66,9 +81,12 @@ export default async function LoginPage({
         <div
           className="rounded-[14px] border px-4 py-3 text-sm leading-6"
           style={{
-            borderColor: "rgba(22,163,74,0.20)",
-            background: "var(--success-soft)",
-            color: "var(--success)",
+            borderColor:
+              "rgba(22,163,74,0.20)",
+            background:
+              "var(--success-soft)",
+            color:
+              "var(--success)",
           }}
         >
           {message}
@@ -77,7 +95,10 @@ export default async function LoginPage({
 
       <div className="h-8" />
 
-      <form action={login} className="space-y-5">
+      <form
+        action={login}
+        className="space-y-5"
+      >
         <div>
           <label
             htmlFor="email"
@@ -93,11 +114,14 @@ export default async function LoginPage({
             autoComplete="email"
             required
             placeholder="you@example.com"
-            className="h-12 w-full rounded-[14px] border px-4 text-sm transition-colors"
+            className="h-12 w-full rounded-[14px] border px-4 text-sm"
             style={{
-              borderColor: "var(--border)",
-              background: "var(--background)",
-              color: "var(--foreground)",
+              borderColor:
+                "var(--border)",
+              background:
+                "var(--background)",
+              color:
+                "var(--foreground)",
             }}
           />
         </div>
@@ -115,7 +139,8 @@ export default async function LoginPage({
               href="/forgot-password"
               className="text-sm font-medium transition-opacity hover:opacity-70"
               style={{
-                color: "var(--primary)",
+                color:
+                  "var(--primary)",
               }}
             >
               Forgot password?
@@ -129,11 +154,14 @@ export default async function LoginPage({
             autoComplete="current-password"
             required
             placeholder="Enter your password"
-            className="h-12 w-full rounded-[14px] border px-4 text-sm transition-colors"
+            className="h-12 w-full rounded-[14px] border px-4 text-sm"
             style={{
-              borderColor: "var(--border)",
-              background: "var(--background)",
-              color: "var(--foreground)",
+              borderColor:
+                "var(--border)",
+              background:
+                "var(--background)",
+              color:
+                "var(--foreground)",
             }}
           />
         </div>
@@ -142,13 +170,16 @@ export default async function LoginPage({
           type="submit"
           className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[14px] text-sm font-semibold text-white transition-opacity hover:opacity-95"
           style={{
-            background: "var(--primary)",
-            border: "1px solid var(--primary-hover)",
+            background:
+              "var(--primary)",
+            border:
+              "1px solid var(--primary-hover)",
             boxShadow:
               "inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 12px rgba(37,99,235,0.18)",
           }}
         >
           Sign In
+
           <ArrowRight size={16} />
         </button>
       </form>
@@ -157,14 +188,16 @@ export default async function LoginPage({
         <div
           className="h-px flex-1"
           style={{
-            background: "var(--border)",
+            background:
+              "var(--border)",
           }}
         />
 
         <span
           className="whitespace-nowrap text-xs uppercase tracking-[0.14em]"
           style={{
-            color: "var(--muted)",
+            color:
+              "var(--muted)",
           }}
         >
           Or continue with
@@ -173,7 +206,8 @@ export default async function LoginPage({
         <div
           className="h-px flex-1"
           style={{
-            background: "var(--border)",
+            background:
+              "var(--border)",
           }}
         />
       </div>
@@ -184,9 +218,12 @@ export default async function LoginPage({
             type="submit"
             className="flex h-12 w-full items-center justify-center gap-3 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
             style={{
-              borderColor: "var(--border)",
-              background: "var(--background)",
-              color: "var(--foreground)",
+              borderColor:
+                "var(--border)",
+              background:
+                "var(--background)",
+              color:
+                "var(--foreground)",
             }}
           >
             <img
@@ -206,9 +243,12 @@ export default async function LoginPage({
             type="submit"
             className="flex h-12 w-full items-center justify-center gap-3 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
             style={{
-              borderColor: "var(--border)",
-              background: "var(--background)",
-              color: "var(--foreground)",
+              borderColor:
+                "var(--border)",
+              background:
+                "var(--background)",
+              color:
+                "var(--foreground)",
             }}
           >
             <img
@@ -229,7 +269,8 @@ export default async function LoginPage({
       <p
         className="text-center text-sm"
         style={{
-          color: "var(--muted)",
+          color:
+            "var(--muted)",
         }}
       >
         Don&apos;t have an account?{" "}
@@ -237,7 +278,8 @@ export default async function LoginPage({
           href="/register"
           className="font-semibold transition-opacity hover:opacity-70"
           style={{
-            color: "var(--primary)",
+            color:
+              "var(--primary)",
           }}
         >
           Create account
