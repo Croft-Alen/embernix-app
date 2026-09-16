@@ -27,6 +27,10 @@ import {
 } from "@/lib/auth/profile";
 
 import {
+  AccountIdentityActions,
+} from "@/components/client/AccountIdentityActions";
+
+import {
   updateAccountPassword,
   updateProfile,
 } from "./actions";
@@ -55,13 +59,17 @@ export default async function AccountPage({
     await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect(
+      "/login"
+    );
   }
 
   const {
     data,
   } = await supabase
-    .from("profiles")
+    .from(
+      "profiles"
+    )
     .select(
       "id, full_name, created_at, updated_at"
     )
@@ -154,6 +162,7 @@ export default async function AccountPage({
         </div>
       )}
 
+      {/* Profile */}
       <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
         <div className="border-b border-[var(--border-light)] p-6">
           <h2 className="text-lg font-semibold">
@@ -267,6 +276,7 @@ export default async function AccountPage({
         </form>
       </section>
 
+      {/* Sign-in methods */}
       <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
         <div className="border-b border-[var(--border-light)] p-6">
           <div className="flex items-start gap-3">
@@ -296,7 +306,7 @@ export default async function AccountPage({
               hasEmail
                 ? user.email ??
                   ""
-                : "No email password identity connected."
+                : "No password sign-in method connected."
             }
             connected={
               hasEmail
@@ -309,10 +319,18 @@ export default async function AccountPage({
             description={
               hasGoogle
                 ? "Connected to your account."
-                : "Not connected."
+                : "Connect your Google account."
             }
             connected={
               hasGoogle
+            }
+            action={
+              <AccountIdentityActions
+                provider="google"
+                connected={
+                  hasGoogle
+                }
+              />
             }
           />
 
@@ -322,16 +340,25 @@ export default async function AccountPage({
             description={
               hasDiscord
                 ? "Connected to your account."
-                : "Not connected."
+                : "Connect your Discord account."
             }
             connected={
               hasDiscord
+            }
+            action={
+              <AccountIdentityActions
+                provider="discord"
+                connected={
+                  hasDiscord
+                }
+              />
             }
             last
           />
         </div>
       </section>
 
+      {/* Password */}
       <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
         <div className="border-b border-[var(--border-light)] p-6">
           <div className="flex items-start gap-3">
@@ -352,7 +379,7 @@ export default async function AccountPage({
                 {
                   hasEmail
                     ? "Set a new password for your Embernix account."
-                    : "Add a password as another way to access your account."
+                    : "Add password sign-in to your Embernix account."
                 }
               </p>
             </div>
@@ -439,6 +466,7 @@ function SignInMethod({
   title,
   description,
   connected,
+  action,
   last = false,
 }: {
   icon?: ReactNode;
@@ -446,11 +474,12 @@ function SignInMethod({
   title: string;
   description: string;
   connected: boolean;
+  action?: ReactNode;
   last?: boolean;
 }) {
   return (
     <div
-      className={`flex items-center justify-between gap-4 px-6 py-4 ${
+      className={`flex flex-col gap-4 px-6 py-4 sm:flex-row sm:items-center sm:justify-between ${
         last
           ? ""
           : "border-b border-[var(--border-light)]"
@@ -486,16 +515,22 @@ function SignInMethod({
         </div>
       </div>
 
-      {connected ? (
-        <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-[var(--success)]">
-          <Check className="h-4 w-4" />
-          Connected
-        </span>
-      ) : (
-        <span className="shrink-0 text-xs font-medium text-[var(--muted)]">
-          Not connected
-        </span>
-      )}
+      <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+        {connected ? (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--success)]">
+            <Check className="h-4 w-4" />
+            Connected
+          </span>
+        ) : (
+          <span className="text-xs font-medium text-[var(--muted)]">
+            Not connected
+          </span>
+        )}
+
+        {
+          action
+        }
+      </div>
     </div>
   );
 }
