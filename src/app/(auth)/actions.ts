@@ -1,172 +1,380 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import {
+  revalidatePath,
+} from "next/cache";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  redirect,
+} from "next/navigation";
 
-export async function login(formData: FormData) {
-  const supabase = await createClient();
+import {
+  createClient,
+} from "@/lib/supabase/server";
 
-  const email = String(formData.get("email") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
+import {
+  getAppOrigin,
+} from "@/lib/auth/app-origin";
 
-  if (!email || !password) {
-    redirect("/login?error=Please enter your email and password.");
-  }
-
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    redirect(
-      `/login?error=${encodeURIComponent(error.message)}`
-    );
-  }
-
-  revalidatePath("/", "layout");
-
-  redirect("/dashboard");
+function getString(
+  value:
+    | FormDataEntryValue
+    | null
+) {
+  return String(
+    value ?? ""
+  ).trim();
 }
 
-export async function register(formData: FormData) {
-  const supabase = await createClient();
-
-  const name = String(formData.get("name") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
-  const confirmPassword = String(
-    formData.get("confirmPassword") ?? ""
+function redirectError(
+  path: string,
+  message: string
+): never {
+  redirect(
+    `${path}?error=${encodeURIComponent(
+      message
+    )}`
   );
+}
 
-  if (!name || !email || !password || !confirmPassword) {
-    redirect("/register?error=Please complete all fields.");
-  }
+function redirectMessage(
+  path: string,
+  message: string
+): never {
+  redirect(
+    `${path}?message=${encodeURIComponent(
+      message
+    )}`
+  );
+}
 
-  if (password !== confirmPassword) {
-    redirect("/register?error=Passwords do not match.");
-  }
+/* =========================================================
+   LOGIN
+========================================================= */
 
-  if (password.length < 8) {
-    redirect(
-      "/register?error=Password must be at least 8 characters."
+export async function login(
+  formData: FormData
+) {
+  const email =
+    getString(
+      formData.get("email")
+    ).toLowerCase();
+
+  const password =
+    String(
+      formData.get(
+        "password"
+      ) ?? ""
+    );
+
+  if (
+    !email ||
+    !password
+  ) {
+    redirectError(
+      "/login",
+      "Please enter your email and password."
     );
   }
 
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const supabase =
+    await createClient();
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: name,
-      },
-      emailRedirectTo: `${siteUrl}/auth/callback`,
-    },
-  });
+  const {
+    error,
+  } =
+    await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
   if (error) {
-    redirect(
-      `/register?error=${encodeURIComponent(error.message)}`
+    redirectError(
+      "/login",
+      error.message
     );
   }
 
-  revalidatePath("/", "layout");
-
-  if (data.session) {
-    redirect("/dashboard");
-  }
+  revalidatePath(
+    "/",
+    "layout"
+  );
 
   redirect(
-    "/login?message=Account created. Please check your email to confirm your account."
+    "/dashboard"
   );
 }
 
-export async function forgotPassword(formData: FormData) {
-  const supabase = await createClient();
+/* =========================================================
+   REGISTER
+========================================================= */
 
-  const email = String(formData.get("email") ?? "").trim();
+export async function register(
+  formData: FormData
+) {
+  const name =
+    getString(
+      formData.get("name")
+    );
+
+  const email =
+    getString(
+      formData.get("email")
+    ).toLowerCase();
+
+  const password =
+    String(
+      formData.get(
+        "password"
+      ) ?? ""
+    );
+
+  const confirmPassword =
+    String(
+      formData.get(
+        "confirmPassword"
+      ) ?? ""
+    );
+
+  if (
+    !name ||
+    !email ||
+    !password ||
+    !confirmPassword
+  ) {
+    redirectError(
+      "/register",
+      "Please complete all fields."
+    );
+  }
+
+  if (
+    name.length < 2
+  ) {
+    redirectError(
+      "/register",
+      "Please enter your full name."
+    );
+  }
+
+  if (
+    password.length < 8
+  ) {
+    redirectError(
+      "/register",
+      "Password must be at least 8 characters."
+    );
+  }
+
+  if (
+    password !==
+    confirmPassword
+  ) {
+    redirectError(
+      "/register",
+      "Passwords do not match."
+    );
+  }
+
+  const supabase =
+    await createClient();
+
+  const appOrigin =
+    await getAppOrigin();
+
+  const {
+    data,
+    error,
+  } =
+    await supabase.auth.signUp({
+      email,
+      password,
+
+      options: {
+        data: {
+          full_name:
+            name,
+        },
+
+        emailRedirectTo:
+          `${appOrigin}/auth/callback?next=/dashboard`,
+      },
+    });
+
+  if (error) {
+    redirectError(
+      "/register",
+      error.message
+    );
+  }
+
+  revalidatePath(
+    "/",
+    "layout"
+  );
+
+  /*
+   * If email confirmation is disabled,
+   * Supabase may immediately create a session.
+   */
+  if (data.session) {
+    redirect(
+      "/dashboard"
+    );
+  }
+
+  redirectMessage(
+    "/login",
+    "Account created. Please check your email to confirm your account."
+  );
+}
+
+/* =========================================================
+   FORGOT PASSWORD
+========================================================= */
+
+export async function forgotPassword(
+  formData: FormData
+) {
+  const email =
+    getString(
+      formData.get("email")
+    ).toLowerCase();
 
   if (!email) {
-    redirect(
-      "/forgot-password?error=Please enter your email address."
+    redirectError(
+      "/forgot-password",
+      "Please enter your email address."
     );
   }
 
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const supabase =
+    await createClient();
 
-  const { error } = await supabase.auth.resetPasswordForEmail(
-    email,
-    {
-      redirectTo: `${siteUrl}/auth/callback?next=/reset-password`,
-    }
-  );
+  const appOrigin =
+    await getAppOrigin();
 
+  const {
+    error,
+  } =
+    await supabase.auth.resetPasswordForEmail(
+      email,
+      {
+        redirectTo:
+          `${appOrigin}/auth/callback?next=/reset-password`,
+      }
+    );
+
+  /*
+   * Do not expose whether an email/account exists.
+   */
   if (error) {
-    redirect(
-      `/forgot-password?error=${encodeURIComponent(error.message)}`
+    console.error(
+      "Password reset request failed:",
+      error
     );
   }
 
-  redirect(
-    "/forgot-password?message=Check your email for the password reset link."
+  redirectMessage(
+    "/forgot-password",
+    "If an Embernix account exists for this email, a password reset link has been sent."
   );
 }
 
-export async function updatePassword(formData: FormData) {
-  const supabase = await createClient();
+/* =========================================================
+   UPDATE PASSWORD
+========================================================= */
 
-  const password = String(formData.get("password") ?? "");
-  const confirmPassword = String(
-    formData.get("confirmPassword") ?? ""
-  );
+export async function updatePassword(
+  formData: FormData
+) {
+  const password =
+    String(
+      formData.get(
+        "password"
+      ) ?? ""
+    );
 
-  if (!password || !confirmPassword) {
-    redirect(
-      "/reset-password?error=Please complete both fields."
+  const confirmPassword =
+    String(
+      formData.get(
+        "confirmPassword"
+      ) ?? ""
+    );
+
+  if (
+    !password ||
+    !confirmPassword
+  ) {
+    redirectError(
+      "/reset-password",
+      "Please complete both fields."
     );
   }
 
-  if (password !== confirmPassword) {
-    redirect(
-      "/reset-password?error=Passwords do not match."
+  if (
+    password.length < 8
+  ) {
+    redirectError(
+      "/reset-password",
+      "Password must be at least 8 characters."
     );
   }
 
-  if (password.length < 8) {
-    redirect(
-      "/reset-password?error=Password must be at least 8 characters."
+  if (
+    password !==
+    confirmPassword
+  ) {
+    redirectError(
+      "/reset-password",
+      "Passwords do not match."
+    );
+  }
+
+  const supabase =
+    await createClient();
+
+  const {
+    data: {
+      user,
+    },
+  } =
+    await supabase.auth.getUser();
+
+  if (!user) {
+    redirectError(
+      "/forgot-password",
+      "Your password reset link is invalid or has expired. Please request a new one."
     );
   }
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect(
-      "/forgot-password?error=Your password reset session has expired. Please request a new link."
-    );
-  }
-
-  const { error } = await supabase.auth.updateUser({
-    password,
-  });
+    error,
+  } =
+    await supabase.auth.updateUser({
+      password,
+    });
 
   if (error) {
-    redirect(
-      `/reset-password?error=${encodeURIComponent(error.message)}`
+    redirectError(
+      "/reset-password",
+      error.message
     );
   }
 
-  revalidatePath("/", "layout");
+  /*
+   * End the recovery session so the
+   * user signs in normally afterwards.
+   */
+  await supabase.auth.signOut();
 
-  redirect(
-    "/login?message=Your password has been updated. You can now sign in."
+  revalidatePath(
+    "/",
+    "layout"
+  );
+
+  redirectMessage(
+    "/login",
+    "Your password has been updated. Sign in with your new password."
   );
 }

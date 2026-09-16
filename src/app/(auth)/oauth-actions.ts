@@ -3,51 +3,61 @@
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAppOrigin } from "@/lib/auth/app-origin";
 
-export async function signInWithGoogle() {
-  const supabase = await createClient();
+type OAuthProvider =
+  | "google"
+  | "discord";
 
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+async function signInWithProvider(
+  provider: OAuthProvider
+) {
+  const supabase =
+    await createClient();
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${siteUrl}/auth/callback`,
-    },
-  });
+  const appOrigin =
+    await getAppOrigin();
+
+  const {
+    data,
+    error,
+  } =
+    await supabase.auth.signInWithOAuth({
+      provider,
+
+      options: {
+        redirectTo:
+          `${appOrigin}/auth/callback?next=/dashboard`,
+      },
+    });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    redirect(
+      `/login?error=${encodeURIComponent(
+        error.message
+      )}`
+    );
   }
 
-  if (data.url) {
-    redirect(data.url);
+  if (!data.url) {
+    redirect(
+      `/login?error=${encodeURIComponent(
+        `Unable to start ${provider} sign in.`
+      )}`
+    );
   }
 
-  redirect("/login?error=Unable to start Google sign in.");
+  redirect(data.url);
+}
+
+export async function signInWithGoogle() {
+  await signInWithProvider(
+    "google"
+  );
 }
 
 export async function signInWithDiscord() {
-  const supabase = await createClient();
-
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "discord",
-    options: {
-      redirectTo: `${siteUrl}/auth/callback`,
-    },
-  });
-
-  if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
-  }
-
-  if (data.url) {
-    redirect(data.url);
-  }
-
-  redirect("/login?error=Unable to start Discord sign in.");
+  await signInWithProvider(
+    "discord"
+  );
 }

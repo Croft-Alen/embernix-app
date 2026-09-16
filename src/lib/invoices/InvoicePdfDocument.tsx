@@ -408,12 +408,12 @@ function getStatusStyle(
 
 function buildLogoUrl() {
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    "http://localhost:3000";
+    process.env.APP_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    "https://app.embernix.org";
 
-  return `${siteUrl.replace(/\/$/, "")}/logo.webp`;
+  return `${siteUrl.replace(/\/+$/, "")}/logo.webp`;
 }
 
 export default function InvoicePdfDocument({
