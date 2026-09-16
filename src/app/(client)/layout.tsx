@@ -39,7 +39,9 @@ export default async function ClientLayout({
     await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect(
+      "/login"
+    );
   }
 
   const {
@@ -79,11 +81,7 @@ export default async function ClientLayout({
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      <div className="hidden lg:block">
-        <ClientSidebar />
-      </div>
-
-      <div className="min-h-screen lg:pl-[260px]">
+      <div className="mx-auto w-full max-w-[1500px] px-4 pb-6 pt-4 sm:px-6">
         <ClientTopbar
           name={
             displayName
@@ -100,11 +98,17 @@ export default async function ClientLayout({
           }
         />
 
-        <main className="p-4 sm:p-6 lg:p-8">
-          {
-            children
-          }
-        </main>
+        <div className="mt-5 lg:grid lg:grid-cols-[216px_minmax(0,1fr)] lg:items-start lg:gap-5">
+          <div className="hidden lg:block">
+            <ClientSidebar />
+          </div>
+
+          <main className="min-w-0">
+            {
+              children
+            }
+          </main>
+        </div>
       </div>
     </div>
   );

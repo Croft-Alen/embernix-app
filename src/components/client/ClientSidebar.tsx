@@ -7,12 +7,12 @@ import {
 } from "next/navigation";
 
 import {
-  Box,
-  FileText,
-  Headphones,
+  BriefcaseBusiness,
   LayoutDashboard,
+  LifeBuoy,
   Package,
   ReceiptText,
+  ShoppingBag,
   X,
 } from "lucide-react";
 
@@ -33,7 +33,7 @@ type ClientSidebarProps = {
 
 const baseNavigation = [
   {
-    label: "Dashboard",
+    label: "Overview",
     href: "/dashboard",
     icon: LayoutDashboard,
   },
@@ -47,19 +47,19 @@ const baseNavigation = [
   {
     label: "Orders",
     href: "/orders",
-    icon: ReceiptText,
+    icon: ShoppingBag,
   },
 
   {
     label: "Invoices",
     href: "/invoices",
-    icon: FileText,
+    icon: ReceiptText,
   },
 
   {
     label: "Support",
     href: "/tickets",
-    icon: Headphones,
+    icon: LifeBuoy,
   },
 ];
 
@@ -96,9 +96,7 @@ export default function ClientSidebar({
         } =
           await supabase.auth.getUser();
 
-        if (
-          cancelled
-        ) {
+        if (cancelled) {
           return;
         }
 
@@ -114,13 +112,6 @@ export default function ClientSidebar({
           return;
         }
 
-        /*
-         * projects has RLS:
-         * customer can only read their own projects.
-         *
-         * Projects themselves only exist after
-         * successful service payment.
-         */
         const {
           data,
           error,
@@ -133,9 +124,7 @@ export default function ClientSidebar({
           )
           .limit(1);
 
-        if (
-          cancelled
-        ) {
+        if (cancelled) {
           return;
         }
 
@@ -159,8 +148,7 @@ export default function ClientSidebar({
         setHasProjects(
           Boolean(
             data &&
-              data.length >
-                0
+              data.length > 0
           )
         );
 
@@ -173,9 +161,7 @@ export default function ClientSidebar({
           error
         );
 
-        if (
-          !cancelled
-        ) {
+        if (!cancelled) {
           setHasProjects(
             false
           );
@@ -205,13 +191,6 @@ export default function ClientSidebar({
             ...baseNavigation,
           ];
 
-        /*
-         * Insert Projects directly
-         * after Products.
-         *
-         * Only paid-service customers
-         * will have a project row.
-         */
         if (
           projectsLoaded &&
           hasProjects
@@ -227,7 +206,7 @@ export default function ClientSidebar({
                 "/projects",
 
               icon:
-                Box,
+                BriefcaseBusiness,
             }
           );
         }
@@ -240,6 +219,27 @@ export default function ClientSidebar({
       ]
     );
 
+  function isActive(
+    href: string
+  ) {
+    if (
+      href ===
+      "/dashboard"
+    ) {
+      return (
+        pathname ===
+        "/dashboard"
+      );
+    }
+
+    return (
+      pathname === href ||
+      pathname.startsWith(
+        `${href}/`
+      )
+    );
+  }
+
   return (
     <>
       {mobileOpen && (
@@ -249,65 +249,33 @@ export default function ClientSidebar({
           onClick={
             onClose
           }
-          className="fixed inset-0 z-40 bg-black/30 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px] lg:hidden"
         />
       )}
 
       <aside
         className={`
-          fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col
-          transition-transform duration-200 lg:translate-x-0
+          fixed bottom-4 left-4 top-4 z-50
+          flex w-[248px] flex-col
+          rounded-[22px]
+          border border-[var(--border)]
+          bg-[var(--surface)]
+          p-3
+          shadow-[0_12px_40px_rgba(15,23,42,0.08)]
+          transition-transform duration-200
+          lg:static lg:z-auto lg:h-[calc(100vh-108px)] lg:w-[216px]
+          lg:translate-x-0 lg:shadow-none
           ${
             mobileOpen
               ? "translate-x-0"
-              : "-translate-x-full"
+              : "-translate-x-[calc(100%+32px)]"
           }
         `}
-        style={{
-          background:
-            "var(--sidebar)",
-
-          color:
-            "var(--sidebar-foreground)",
-        }}
       >
-        <div className="flex h-[72px] items-center justify-between px-5">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-3"
-          >
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-[12px] text-sm font-bold text-white"
-              style={{
-                background:
-                  "var(--primary)",
-
-                border:
-                  "1px solid var(--primary-hover)",
-
-                boxShadow:
-                  "inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 14px rgba(37,99,235,0.2)",
-              }}
-            >
-              E
-            </div>
-
-            <div>
-              <p className="text-[15px] font-semibold">
-                Embernix
-              </p>
-
-              <p
-                className="mt-0.5 text-[11px]"
-                style={{
-                  color:
-                    "rgba(255,255,255,0.48)",
-                }}
-              >
-                Client Portal
-              </p>
-            </div>
-          </Link>
+        <div className="flex items-center justify-between px-2 pb-3 lg:hidden">
+          <p className="text-sm font-semibold text-[var(--foreground)]">
+            Navigation
+          </p>
 
           <button
             type="button"
@@ -315,37 +283,13 @@ export default function ClientSidebar({
             onClick={
               onClose
             }
-            className="flex h-9 w-9 items-center justify-center rounded-[10px] lg:hidden"
-            style={{
-              color:
-                "rgba(255,255,255,0.7)",
-            }}
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
           >
-            <X
-              size={19}
-            />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div
-          className="mx-5 h-px"
-          style={{
-            background:
-              "rgba(255,255,255,0.08)",
-          }}
-        />
-
-        <nav className="flex-1 px-3 py-5">
-          <p
-            className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em]"
-            style={{
-              color:
-                "rgba(255,255,255,0.36)",
-            }}
-          >
-            Workspace
-          </p>
-
+        <nav className="flex-1">
           <div className="space-y-1">
             {navigation.map(
               (
@@ -355,14 +299,8 @@ export default function ClientSidebar({
                   item.icon;
 
                 const active =
-                  pathname ===
-                    item.href ||
-                  (
-                    item.href !==
-                      "/dashboard" &&
-                    pathname.startsWith(
-                      `${item.href}/`
-                    )
+                  isActive(
+                    item.href
                   );
 
                 return (
@@ -376,26 +314,18 @@ export default function ClientSidebar({
                     onClick={
                       onClose
                     }
-                    className="flex h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-medium transition-colors"
-                    style={
-                      active
-                        ? {
-                            background:
-                              "rgba(255,255,255,0.10)",
-
-                            color:
-                              "#ffffff",
-                          }
-                        : {
-                            color:
-                              "rgba(255,255,255,0.62)",
-                          }
-                    }
+                    className={`
+                      flex h-11 items-center gap-3 rounded-xl px-3
+                      text-sm font-medium transition-colors
+                      ${
+                        active
+                          ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                          : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
+                      }
+                    `}
                   >
                     <Icon
-                      size={
-                        18
-                      }
+                      className="h-[18px] w-[18px] shrink-0"
                       strokeWidth={
                         2
                       }
@@ -412,28 +342,6 @@ export default function ClientSidebar({
             )}
           </div>
         </nav>
-
-        <div
-          className="mx-5 h-px"
-          style={{
-            background:
-              "rgba(255,255,255,0.08)",
-          }}
-        />
-
-        <div className="p-5">
-          <p
-            className="text-xs leading-5"
-            style={{
-              color:
-                "rgba(255,255,255,0.38)",
-            }}
-          >
-            Â©{" "}
-            {new Date().getFullYear()}{" "}
-            Embernix
-          </p>
-        </div>
       </aside>
     </>
   );
