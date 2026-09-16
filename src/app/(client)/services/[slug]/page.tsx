@@ -29,21 +29,15 @@ function formatMoney(
     return new Intl.NumberFormat(
       "en-US",
       {
-        style:
-          "currency",
-
+        style: "currency",
         currency:
-          currency ||
-          "USD",
+          currency || "USD",
       }
     ).format(
       cents / 100
     );
   } catch {
-    return `${
-      currency ||
-      "USD"
-    } ${(
+    return `${currency || "USD"} ${(
       cents / 100
     ).toFixed(2)}`;
   }
@@ -111,12 +105,8 @@ export default async function ServiceDetailPage({
             <div className="aspect-[16/8] overflow-hidden border-b border-[var(--border-light)] bg-[var(--surface-secondary)]">
               {service.image_url ? (
                 <img
-                  src={
-                    service.image_url
-                  }
-                  alt={
-                    service.name
-                  }
+                  src={service.image_url}
+                  alt={service.name}
                   className="h-full w-full object-cover"
                 />
               ) : (
@@ -128,9 +118,7 @@ export default async function ServiceDetailPage({
 
             <div className="p-6 lg:p-8">
               <h1 className="text-2xl font-semibold text-[var(--foreground)] lg:text-3xl">
-                {
-                  service.name
-                }
+                {service.name}
               </h1>
 
               {service.short_description && (
@@ -200,7 +188,7 @@ export default async function ServiceDetailPage({
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]" />
 
                 <span className="text-[var(--muted)]">
-                  Invoice generated automatically
+                  Same centralized checkout as products
                 </span>
               </div>
 
@@ -214,7 +202,7 @@ export default async function ServiceDetailPage({
             </div>
 
             <Link
-              href={`/checkout/service?service=${encodeURIComponent(
+              href={`/checkout?service=${encodeURIComponent(
                 service.slug
               )}`}
               className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-xl bg-[var(--primary)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[var(--primary-hover)]"
@@ -225,7 +213,7 @@ export default async function ServiceDetailPage({
             <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-[var(--muted)]">
               <LockKeyhole className="h-3.5 w-3.5" />
 
-              Secure payment
+              Secure checkout by Paddle
             </div>
           </div>
         </aside>
