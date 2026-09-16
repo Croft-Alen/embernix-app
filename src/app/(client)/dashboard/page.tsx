@@ -1,218 +1,133 @@
 import Link from "next/link";
+
 import {
-  ArrowRight,
-  Box,
-  FileText,
+  BriefcaseBusiness,
   Headphones,
   Package,
   ReceiptText,
 } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+} from "@/lib/supabase/server";
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: {
+      user,
+    },
+  } =
+    await supabase.auth.getUser();
 
   const name =
-    user?.user_metadata?.full_name ||
-    user?.user_metadata?.name ||
-    user?.email?.split("@")[0] ||
+    user?.user_metadata
+      ?.full_name ||
+    user?.user_metadata
+      ?.name ||
+    user?.email?.split(
+      "@"
+    )[0] ||
     "there";
 
   const firstName =
-    String(name).trim().split(" ")[0] || "there";
+    String(
+      name
+    )
+      .trim()
+      .split(
+        " "
+      )[0] ||
+    "there";
 
   return (
-    <div className="mx-auto max-w-[1440px]">
-      {/* Heading */}
-      <section>
-        <p
-          className="text-sm font-medium"
-          style={{
-            color: "var(--muted)",
-          }}
-        >
-          Dashboard
-        </p>
+    <div className="mx-auto w-full max-w-[1440px] space-y-5">
+      {/* Welcome */}
+      <section className="overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6 lg:p-7">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <h1 className="min-w-0 text-[22px] font-semibold tracking-[-0.035em] text-[var(--foreground)] sm:text-2xl lg:text-[28px]">
+            Welcome back,{" "}
+            {
+              firstName
+            }.
+          </h1>
 
-        <div className="h-2" />
+          <img
+            src="https://images.emojiterra.com/microsoft/fluent-emoji/15.1/1024px/1f44b_color.png"
+            alt=""
+            aria-hidden="true"
+            className="h-7 w-7 shrink-0 object-contain sm:h-8 sm:w-8"
+          />
+        </div>
 
-        <h1 className="text-3xl font-semibold tracking-[-0.035em]">
-          Welcome back, {firstName}.
-        </h1>
-
-        <div className="h-3" />
-
-        <p
-          className="max-w-2xl text-sm leading-6"
-          style={{
-            color: "var(--muted)",
-          }}
-        >
-          Manage your Embernix products, projects, orders, invoices, and
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
+          Manage your Embernix products,
+          projects, orders, invoices, and
           support from one place.
         </p>
       </section>
 
-      <div className="h-8" />
-
-      {/* Overview */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <OverviewCard
-          title="Products"
-          description="View your purchased products and downloads."
-          icon={<Package size={20} />}
-          href="/products"
-        />
-
-        <OverviewCard
-          title="Projects"
-          description="Follow the progress of your active service projects."
-          icon={<Box size={20} />}
-          href="/projects"
-        />
-
-        <OverviewCard
-          title="Orders"
-          description="Review your Embernix purchase history."
-          icon={<ReceiptText size={20} />}
-          href="/orders"
-        />
-
-        <OverviewCard
-          title="Support"
-          description="Open and manage your support tickets."
-          icon={<Headphones size={20} />}
-          href="/tickets"
-        />
-      </section>
-
-      <div className="h-7" />
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.8fr)]">
-        {/* Recent Activity */}
-        <div
-          className="rounded-[22px] border p-6"
-          style={{
-            background: "var(--surface)",
-            borderColor: "var(--border-light)",
-          }}
-        >
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold">
-                Recent activity
-              </h2>
-
-              <p
-                className="mt-1 text-sm"
-                style={{
-                  color: "var(--muted)",
-                }}
-              >
-                Your latest Embernix account activity will appear here.
-              </p>
-            </div>
-          </div>
-
-          <div className="h-7" />
-
-          <div
-            className="flex min-h-[220px] items-center justify-center rounded-[18px] border border-dashed px-5 text-center"
-            style={{
-              borderColor: "var(--border)",
-              background: "var(--background)",
-            }}
-          >
-            <div className="max-w-sm">
-              <div
-                className="mx-auto flex h-11 w-11 items-center justify-center rounded-[13px]"
-                style={{
-                  background: "var(--primary-soft)",
-                  color: "var(--primary)",
-                }}
-              >
-                <ReceiptText size={19} />
-              </div>
-
-              <div className="h-4" />
-
-              <p className="text-sm font-semibold">
-                No activity yet
-              </p>
-
-              <p
-                className="mt-2 text-sm leading-6"
-                style={{
-                  color: "var(--muted)",
-                }}
-              >
-                Orders, product purchases, project updates, and support activity
-                will appear here.
-              </p>
-            </div>
-          </div>
+      {/* Workspace */}
+      <section>
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-[var(--foreground)]">
+            Your workspace
+          </h2>
         </div>
 
-        {/* Quick Links */}
-        <div
-          className="rounded-[22px] border p-6"
-          style={{
-            background: "var(--surface)",
-            borderColor: "var(--border-light)",
-          }}
-        >
-          <h2 className="text-lg font-semibold">
-            Quick access
-          </h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <WorkspaceCard
+            title="Products"
+            description="Access your purchased products and downloads."
+            icon={
+              <Package
+                className="h-5 w-5"
+              />
+            }
+            href="/products"
+          />
 
-          <p
-            className="mt-1 text-sm"
-            style={{
-              color: "var(--muted)",
-            }}
-          >
-            Jump to the areas you use most.
-          </p>
+          <WorkspaceCard
+            title="Projects"
+            description="Track your active Embernix service projects."
+            icon={
+              <BriefcaseBusiness
+                className="h-5 w-5"
+              />
+            }
+            href="/projects"
+          />
 
-          <div className="h-5" />
+          <WorkspaceCard
+            title="Orders"
+            description="Review purchases and order history."
+            icon={
+              <ReceiptText
+                className="h-5 w-5"
+              />
+            }
+            href="/orders"
+          />
 
-          <div className="space-y-2">
-            <QuickLink
-              href="/products"
-              label="My Products"
-              icon={<Package size={17} />}
-            />
-
-            <QuickLink
-              href="/projects"
-              label="My Projects"
-              icon={<Box size={17} />}
-            />
-
-            <QuickLink
-              href="/invoices"
-              label="Invoices"
-              icon={<FileText size={17} />}
-            />
-
-            <QuickLink
-              href="/tickets"
-              label="Support Tickets"
-              icon={<Headphones size={17} />}
-            />
-          </div>
+          <WorkspaceCard
+            title="Support"
+            description="View and manage your support requests."
+            icon={
+              <Headphones
+                className="h-5 w-5"
+              />
+            }
+            href="/tickets"
+          />
         </div>
       </section>
     </div>
   );
 }
 
-function OverviewCard({
+function WorkspaceCard({
   title,
   description,
   icon,
@@ -225,75 +140,30 @@ function OverviewCard({
 }) {
   return (
     <Link
-      href={href}
-      className="rounded-[20px] border p-5 transition-colors hover:bg-[var(--surface-hover)]"
-      style={{
-        background: "var(--surface)",
-        borderColor: "var(--border-light)",
-      }}
+      href={
+        href
+      }
+      className="group rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 transition-colors hover:border-[var(--primary)]"
     >
-      <div
-        className="flex h-10 w-10 items-center justify-center rounded-[12px]"
-        style={{
-          background: "var(--primary-soft)",
-          color: "var(--primary)",
-        }}
-      >
-        {icon}
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+        {
+          icon
+        }
       </div>
 
-      <div className="h-5" />
+      <div className="mt-5">
+        <h3 className="text-[15px] font-semibold text-[var(--foreground)]">
+          {
+            title
+          }
+        </h3>
 
-      <h2 className="text-base font-semibold">
-        {title}
-      </h2>
-
-      <p
-        className="mt-2 text-sm leading-6"
-        style={{
-          color: "var(--muted)",
-        }}
-      >
-        {description}
-      </p>
-    </Link>
-  );
-}
-
-function QuickLink({
-  href,
-  label,
-  icon,
-}: {
-  href: string;
-  label: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex h-12 items-center justify-between rounded-[14px] px-3 transition-colors hover:bg-[var(--surface-secondary)]"
-    >
-      <div className="flex items-center gap-3">
-        <span
-          style={{
-            color: "var(--primary)",
-          }}
-        >
-          {icon}
-        </span>
-
-        <span className="text-sm font-medium">
-          {label}
-        </span>
+        <p className="mt-1.5 text-sm leading-6 text-[var(--muted)]">
+          {
+            description
+          }
+        </p>
       </div>
-
-      <ArrowRight
-        size={16}
-        style={{
-          color: "var(--muted)",
-        }}
-      />
     </Link>
   );
 }
