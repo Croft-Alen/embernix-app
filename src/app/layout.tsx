@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
+
 import {
   Inter,
   Plus_Jakarta_Sans,
 } from "next/font/google";
+
+import {
+  AuthHashErrorHandler,
+} from "@/components/auth/AuthHashErrorHandler";
 
 import "./globals.css";
 
@@ -12,20 +17,26 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-const plusJakartaSans = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-plus-jakarta",
-});
+const plusJakartaSans =
+  Plus_Jakarta_Sans({
+    subsets: ["latin"],
+    display: "swap",
+    variable:
+      "--font-plus-jakarta",
+  });
 
 export const metadata: Metadata = {
   title: {
     default: "Embernix",
     template: "%s | Embernix",
   },
+
   description:
     "Manage your Embernix products, projects, orders, invoices, and support.",
-  applicationName: "Embernix",
+
+  applicationName:
+    "Embernix",
+
   robots: {
     index: false,
     follow: false,
@@ -42,6 +53,8 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${plusJakartaSans.variable}`}
       >
+        <AuthHashErrorHandler />
+
         {children}
       </body>
     </html>

@@ -4,6 +4,8 @@ import {
   useState,
 } from "react";
 
+import Button from "@/components/ui/Button";
+
 import {
   createClient,
 } from "@/lib/supabase/client";
@@ -20,7 +22,8 @@ type AccountIdentityActionsProps = {
 function providerName(
   provider: OAuthProvider
 ) {
-  return provider === "google"
+  return provider ===
+    "google"
     ? "Google"
     : "Discord";
 }
@@ -41,6 +44,11 @@ export function AccountIdentityActions({
     setLoading(true);
 
     try {
+      sessionStorage.setItem(
+        "embernix_linking_provider",
+        provider
+      );
+
       const {
         data,
         error,
@@ -55,10 +63,18 @@ export function AccountIdentityActions({
         });
 
       if (error) {
+        sessionStorage.removeItem(
+          "embernix_linking_provider"
+        );
+
         throw error;
       }
 
       if (!data?.url) {
+        sessionStorage.removeItem(
+          "embernix_linking_provider"
+        );
+
         throw new Error(
           `Unable to connect ${providerName(
             provider
@@ -82,8 +98,6 @@ export function AccountIdentityActions({
         `/account?error=${encodeURIComponent(
           message
         )}`;
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -121,7 +135,7 @@ export function AccountIdentityActions({
         throw new Error(
           `${providerName(
             provider
-          )} is not connected to this account.`
+          )} is not connected.`
         );
       }
 
@@ -130,7 +144,7 @@ export function AccountIdentityActions({
         1
       ) {
         throw new Error(
-          "Connect another sign-in method before disconnecting this one."
+          "Connect another sign-in method first."
         );
       }
 
@@ -168,46 +182,39 @@ export function AccountIdentityActions({
         `/account?error=${encodeURIComponent(
           message
         )}`;
-    } finally {
-      setLoading(false);
     }
   }
 
-  if (
-    connected
-  ) {
+  if (connected) {
     return (
-      <button
+      <Button
         type="button"
-        disabled={
+        size="sm"
+        variant="secondary"
+        loading={
           loading
         }
         onClick={
           disconnectIdentity
         }
-        className="inline-flex h-9 items-center justify-center rounded-xl border border-[var(--border)] bg-white px-3 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {loading
-          ? "Disconnecting..."
-          : "Disconnect"}
-      </button>
+        Disconnect
+      </Button>
     );
   }
 
   return (
-    <button
+    <Button
       type="button"
-      disabled={
+      size="sm"
+      loading={
         loading
       }
       onClick={
         connectIdentity
       }
-      className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--primary)] px-3 text-xs font-medium text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {loading
-        ? "Connecting..."
-        : "Connect"}
-    </button>
+      Connect
+    </Button>
   );
 }

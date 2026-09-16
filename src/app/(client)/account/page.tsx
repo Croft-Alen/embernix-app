@@ -30,6 +30,8 @@ import {
   AccountIdentityActions,
 } from "@/components/client/AccountIdentityActions";
 
+import Button from "@/components/ui/Button";
+
 import {
   updateAccountPassword,
   updateProfile,
@@ -266,12 +268,11 @@ export default async function AccountPage({
               </div>
             </div>
 
-            <button
+            <Button
               type="submit"
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-[var(--primary)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--primary-hover)]"
             >
               Save changes
-            </button>
+            </Button>
           </div>
         </form>
       </section>
@@ -443,16 +444,15 @@ export default async function AccountPage({
               />
             </div>
 
-            <button
+            <Button
               type="submit"
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-[var(--primary)] px-5 text-sm font-medium text-white transition-colors hover:bg-[var(--primary-hover)]"
             >
               {
                 hasEmail
                   ? "Update password"
                   : "Create password"
               }
-            </button>
+            </Button>
           </div>
         </form>
       </section>
