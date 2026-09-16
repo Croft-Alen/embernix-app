@@ -126,6 +126,7 @@ async function requireAdmin() {
 
   const {
     data: admin,
+    error,
   } = await supabase
     .from("admin_users")
     .select("user_id")
@@ -135,37 +136,40 @@ async function requireAdmin() {
     )
     .maybeSingle();
 
-  if (!admin) {
+  if (
+    error ||
+    !admin
+  ) {
     redirect("/dashboard");
   }
 
   return user;
 }
 
-function redirectWithError(
+function buildErrorUrl(
   path: string,
   message: string
-): never {
-  const url =
-    new URL(
-      path,
-      "https://embernix.local"
-    );
+) {
+  const params =
+    new URLSearchParams({
+      error: message,
+    });
 
-  url.searchParams.set(
-    "error",
-    message
-  );
-
-  redirect(
-    `${url.pathname}${url.search}`
-  );
+  return `${path}?${params.toString()}`;
 }
 
 export async function createService(
   formData: FormData
 ) {
   await requireAdmin();
+
+  let redirectTarget:
+    | string
+    | null = null;
+
+  let errorTarget:
+    | string
+    | null = null;
 
   try {
     const name =
@@ -260,6 +264,8 @@ export async function createService(
 
     const {
       data: existing,
+      error:
+        existingError,
     } = await admin
       .from("services")
       .select("id")
@@ -268,6 +274,17 @@ export async function createService(
         slug
       )
       .maybeSingle();
+
+    if (existingError) {
+      console.error(
+        "Failed checking existing service:",
+        existingError
+      );
+
+      throw new Error(
+        "Unable to validate service slug."
+      );
+    }
 
     if (existing) {
       throw new Error(
@@ -282,6 +299,7 @@ export async function createService(
       .from("services")
       .insert({
         name,
+
         slug,
 
         short_description:
@@ -326,17 +344,36 @@ export async function createService(
       "/admin/services"
     );
 
-    redirect(
-      `/admin/services/${service.id}/edit`
-    );
+    redirectTarget =
+      `/admin/services/${service.id}/edit`;
   } catch (error) {
-    redirectWithError(
-      "/admin/services/new",
+    const message =
       error instanceof Error
         ? error.message
-        : "Unable to create service."
+        : "Unable to create service.";
+
+    errorTarget =
+      buildErrorUrl(
+        "/admin/services/new",
+        message
+      );
+  }
+
+  if (errorTarget) {
+    redirect(
+      errorTarget
     );
   }
+
+  if (redirectTarget) {
+    redirect(
+      redirectTarget
+    );
+  }
+
+  redirect(
+    "/admin/services"
+  );
 }
 
 export async function updateService(
@@ -345,12 +382,21 @@ export async function updateService(
 ) {
   await requireAdmin();
 
+  let redirectTarget:
+    | string
+    | null = null;
+
+  let errorTarget:
+    | string
+    | null = null;
+
   try {
     const admin =
       createAdminClient();
 
     const {
-      data: currentService,
+      data:
+        currentService,
       error:
         currentServiceError,
     } = await admin
@@ -460,6 +506,8 @@ export async function updateService(
 
     const {
       data: duplicate,
+      error:
+        duplicateError,
     } = await admin
       .from("services")
       .select("id")
@@ -472,6 +520,17 @@ export async function updateService(
         serviceId
       )
       .maybeSingle();
+
+    if (duplicateError) {
+      console.error(
+        "Failed checking duplicate service slug:",
+        duplicateError
+      );
+
+      throw new Error(
+        "Unable to validate service slug."
+      );
+    }
 
     if (duplicate) {
       throw new Error(
@@ -486,6 +545,7 @@ export async function updateService(
       .from("services")
       .update({
         name,
+
         slug,
 
         short_description:
@@ -533,17 +593,36 @@ export async function updateService(
       `/admin/services/${serviceId}/edit`
     );
 
-    redirect(
-      `/admin/services/${serviceId}/edit?success=1`
-    );
+    redirectTarget =
+      `/admin/services/${serviceId}/edit?success=1`;
   } catch (error) {
-    redirectWithError(
-      `/admin/services/${serviceId}/edit`,
+    const message =
       error instanceof Error
         ? error.message
-        : "Unable to update service."
+        : "Unable to update service.";
+
+    errorTarget =
+      buildErrorUrl(
+        `/admin/services/${serviceId}/edit`,
+        message
+      );
+  }
+
+  if (errorTarget) {
+    redirect(
+      errorTarget
     );
   }
+
+  if (redirectTarget) {
+    redirect(
+      redirectTarget
+    );
+  }
+
+  redirect(
+    "/admin/services"
+  );
 }
 
 export async function toggleServiceActive(
@@ -561,6 +640,7 @@ export async function toggleServiceActive(
     .from("services")
     .update({
       active,
+
       updated_at:
         new Date().toISOString(),
     })
