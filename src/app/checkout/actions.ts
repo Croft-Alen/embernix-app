@@ -97,6 +97,12 @@ function clean(
   ).trim();
 }
 
+/*
+ * ======================================
+ * BILLING PROFILE
+ * ======================================
+ */
+
 async function saveBillingProfile(
   userId: string,
   billing: ServiceBillingInput
@@ -218,6 +224,12 @@ async function saveBillingProfile(
   return profile.id;
 }
 
+/*
+ * ======================================
+ * SERVICE INVOICE
+ * ======================================
+ */
+
 async function ensureServiceInvoice({
   orderId,
   userId,
@@ -235,11 +247,15 @@ async function ensureServiceInvoice({
   userId: string;
   serviceId: string;
   serviceName: string;
+
   serviceDescription:
     | string
     | null;
+
   billingProfileId: string;
+
   currency: string;
+
   subtotalCents: number;
   totalCents: number;
   unitPriceCents: number;
@@ -281,43 +297,58 @@ async function ensureServiceInvoice({
   let invoiceId:
     string;
 
+  /*
+   * Existing invoice is only reusable
+   * while still unpaid.
+   */
   if (
     existingInvoice
   ) {
+    if (
+      existingInvoice.status !==
+      "unpaid"
+    ) {
+      throw new Error(
+        "This service invoice can no longer be reused."
+      );
+    }
+
     invoiceId =
       existingInvoice.id;
 
-    if (
-      existingInvoice.status ===
-      "unpaid"
-    ) {
-      const {
-        error:
-          refreshError,
-      } = await admin
-        .from("invoices")
-        .update({
-          billing_profile_id:
-            billingProfileId,
+    const {
+      error:
+        refreshError,
+    } = await admin
+      .from("invoices")
+      .update({
+        billing_profile_id:
+          billingProfileId,
 
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq(
-          "id",
-          invoiceId
-        );
+        service_id:
+          serviceId,
 
-      if (refreshError) {
-        console.error(
-          "Failed refreshing service invoice:",
-          refreshError
-        );
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "id",
+        invoiceId
+      )
+      .eq(
+        "status",
+        "unpaid"
+      );
 
-        throw new Error(
-          "Unable to refresh service invoice."
-        );
-      }
+    if (refreshError) {
+      console.error(
+        "Failed refreshing service invoice:",
+        refreshError
+      );
+
+      throw new Error(
+        "Unable to refresh service invoice."
+      );
     }
   } else {
     const now =
@@ -411,6 +442,9 @@ async function ensureServiceInvoice({
       createdInvoice.id;
   }
 
+  /*
+   * Ensure invoice item exists.
+   */
   const {
     data:
       existingItem,
@@ -472,6 +506,10 @@ async function ensureServiceInvoice({
         invoiceItemError
       );
 
+      /*
+       * Only remove the invoice if it is
+       * still unpaid.
+       */
       await admin
         .from("invoices")
         .delete()
@@ -493,6 +531,12 @@ async function ensureServiceInvoice({
   return invoiceId;
 }
 
+/*
+ * ======================================
+ * MAIN CHECKOUT PREPARATION
+ * ======================================
+ */
+
 export async function prepareCheckoutOrder(
   itemType: CheckoutItemType,
   itemSlug: string,
@@ -504,6 +548,7 @@ export async function prepareCheckoutOrder(
   if (!acceptedTerms) {
     return {
       success: false,
+
       error:
         "Please agree to the Terms of Service.",
     };
@@ -515,6 +560,7 @@ export async function prepareCheckoutOrder(
   if (!slug) {
     return {
       success: false,
+
       error:
         "Checkout information is missing.",
     };
@@ -528,10 +574,17 @@ export async function prepareCheckoutOrder(
   ) {
     return {
       success: false,
+
       error:
         "Invalid checkout item.",
     };
   }
+
+  /*
+   * ======================================
+   * AUTH
+   * ======================================
+   */
 
   const supabase =
     await createClient();
@@ -546,6 +599,7 @@ export async function prepareCheckoutOrder(
   if (!user) {
     return {
       success: false,
+
       error:
         "Please sign in before continuing.",
     };
@@ -554,6 +608,7 @@ export async function prepareCheckoutOrder(
   if (!user.email) {
     return {
       success: false,
+
       error:
         "Your Embernix account has no valid email address.",
     };
@@ -562,14 +617,22 @@ export async function prepareCheckoutOrder(
   const admin =
     createAdminClient();
 
+  /*
+   * ======================================
+   * LOAD PRODUCT / SERVICE
+   * ======================================
+   */
+
   let item:
     | {
         id: string;
         slug: string;
         name: string;
+
         short_description:
           | string
           | null;
+
         price_cents: number;
         currency: string;
       }
@@ -609,17 +672,37 @@ export async function prepareCheckoutOrder(
     ) {
       return {
         success: false,
+
         error:
           "This product is no longer available.",
       };
     }
 
     item = {
-      ...product,
+      id:
+        product.id,
+
+      slug:
+        product.slug,
+
+      name:
+        product.name,
+
       short_description:
         null,
+
+      price_cents:
+        Number(
+          product.price_cents
+        ),
+
+      currency:
+        product.currency,
     };
 
+    /*
+     * Prevent duplicate product ownership.
+     */
     const {
       data:
         ownership,
@@ -648,8 +731,10 @@ export async function prepareCheckoutOrder(
     if (ownership) {
       return {
         success: false,
+
         error:
           "You already own this product.",
+
         ownedProductId:
           product.id,
       };
@@ -686,27 +771,55 @@ export async function prepareCheckoutOrder(
     ) {
       return {
         success: false,
+
         error:
           "This service is no longer available.",
       };
     }
 
-    item =
-      service;
+    item = {
+      id:
+        service.id,
+
+      slug:
+        service.slug,
+
+      name:
+        service.name,
+
+      short_description:
+        service.short_description,
+
+      price_cents:
+        Number(
+          service.price_cents
+        ),
+
+      currency:
+        service.currency,
+    };
   }
 
   if (
     !item ||
-    Number(
+    !Number.isFinite(
       item.price_cents
-    ) <= 0
+    ) ||
+    item.price_cents <= 0
   ) {
     return {
       success: false,
+
       error:
         "This item cannot currently be purchased.",
     };
   }
+
+  /*
+   * ======================================
+   * SERVICE BILLING
+   * ======================================
+   */
 
   let billingProfileId:
     | string
@@ -719,6 +832,7 @@ export async function prepareCheckoutOrder(
     if (!billing) {
       return {
         success: false,
+
         error:
           "Billing details are required for services.",
       };
@@ -733,6 +847,7 @@ export async function prepareCheckoutOrder(
     } catch (error) {
       return {
         success: false,
+
         error:
           error instanceof
             Error
@@ -742,9 +857,29 @@ export async function prepareCheckoutOrder(
     }
   }
 
+  /*
+   * ======================================
+   * TRY TO REUSE PENDING ORDER
+   * ======================================
+   *
+   * IMPORTANT:
+   *
+   * Product:
+   * pending + unpaid order may be reused.
+   *
+   * Service:
+   * pending + unpaid order may ONLY be reused
+   * if its invoice is also still UNPAID.
+   *
+   * A paid/cancelled/refunded service invoice
+   * must NEVER be attached to another payment.
+   */
+
   const {
     data:
       pendingOrders,
+    error:
+      pendingOrdersError,
   } = await admin
     .from("orders")
     .select(`
@@ -773,7 +908,16 @@ export async function prepareCheckoutOrder(
         ascending: false,
       }
     )
-    .limit(10);
+    .limit(20);
+
+  if (
+    pendingOrdersError
+  ) {
+    console.error(
+      "Failed checking pending checkout orders:",
+      pendingOrdersError
+    );
+  }
 
   if (
     pendingOrders?.length
@@ -782,11 +926,36 @@ export async function prepareCheckoutOrder(
       const pendingOrder
       of pendingOrders
     ) {
-      let query =
-        admin
-          .from(
-            "order_items"
-          )
+      let pendingItem:
+        | {
+            id: string;
+            item_type: string;
+            product_id:
+              | string
+              | null;
+            service_id:
+              | string
+              | null;
+            product_name: string;
+            unit_price_cents: number;
+            quantity: number;
+          }
+        | null = null;
+
+      /*
+       * Avoid mutable Supabase query builder
+       * typing issues by querying each type
+       * separately.
+       */
+      if (
+        itemType ===
+        "product"
+      ) {
+        const {
+          data,
+          error,
+        } = await admin
+          .from("order_items")
           .select(`
             id,
             item_type,
@@ -802,39 +971,166 @@ export async function prepareCheckoutOrder(
           )
           .eq(
             "item_type",
-            itemType
-          );
-
-      if (
-        itemType ===
-        "product"
-      ) {
-        query =
-          query.eq(
+            "product"
+          )
+          .eq(
             "product_id",
             item.id
+          )
+          .maybeSingle();
+
+        if (error) {
+          console.error(
+            "Failed checking pending product item:",
+            error
           );
+
+          continue;
+        }
+
+        pendingItem =
+          data;
       } else {
-        query =
-          query.eq(
+        const {
+          data,
+          error,
+        } = await admin
+          .from("order_items")
+          .select(`
+            id,
+            item_type,
+            product_id,
+            service_id,
+            product_name,
+            unit_price_cents,
+            quantity
+          `)
+          .eq(
+            "order_id",
+            pendingOrder.id
+          )
+          .eq(
+            "item_type",
+            "service"
+          )
+          .eq(
             "service_id",
             item.id
+          )
+          .maybeSingle();
+
+        if (error) {
+          console.error(
+            "Failed checking pending service item:",
+            error
           );
+
+          continue;
+        }
+
+        pendingItem =
+          data;
       }
 
-      const {
-        data:
-          pendingItem,
-      } =
-        await query.maybeSingle();
-
+      /*
+       * This pending order belongs to some
+       * other checkout item.
+       */
       if (!pendingItem) {
         continue;
       }
 
+      /*
+       * ======================================
+       * CRITICAL SERVICE REUSE CHECK
+       * ======================================
+       */
+      if (
+        itemType ===
+        "service"
+      ) {
+        const {
+          data:
+            existingServiceInvoice,
+          error:
+            existingServiceInvoiceError,
+        } = await admin
+          .from("invoices")
+          .select(`
+            id,
+            status,
+            paddle_transaction_id
+          `)
+          .eq(
+            "order_id",
+            pendingOrder.id
+          )
+          .maybeSingle();
+
+        if (
+          existingServiceInvoiceError
+        ) {
+          console.error(
+            "Failed checking reusable service invoice:",
+            existingServiceInvoiceError
+          );
+
+          /*
+           * Don't risk reusing an uncertain
+           * service order.
+           */
+          continue;
+        }
+
+        /*
+         * Existing invoice:
+         *
+         * unpaid -> reusable
+         *
+         * paid / cancelled / refunded / draft /
+         * anything else -> old checkout, skip it.
+         */
+        if (
+          existingServiceInvoice &&
+          existingServiceInvoice.status !==
+            "unpaid"
+        ) {
+          console.log(
+            "Skipping old pending service order because invoice is not unpaid:",
+            {
+              orderId:
+                pendingOrder.id,
+
+              orderNumber:
+                pendingOrder.order_number,
+
+              invoiceId:
+                existingServiceInvoice.id,
+
+              invoiceStatus:
+                existingServiceInvoice.status,
+            }
+          );
+
+          continue;
+        }
+
+        /*
+         * If an unpaid invoice somehow has
+         * a Paddle transaction, that's okay.
+         *
+         * The Paddle API route can continue
+         * that existing transaction.
+         */
+      }
+
+      /*
+       * Refresh terms acceptance on valid
+       * reusable checkout.
+       */
       const {
         error:
-          refreshError,
+          refreshOrderError,
       } = await admin
         .from("orders")
         .update({
@@ -850,21 +1146,32 @@ export async function prepareCheckoutOrder(
         .eq(
           "id",
           pendingOrder.id
+        )
+        .eq(
+          "status",
+          "pending"
+        )
+        .eq(
+          "payment_status",
+          "unpaid"
         );
 
-      if (refreshError) {
+      if (
+        refreshOrderError
+      ) {
         console.error(
           "Failed refreshing pending checkout:",
-          refreshError
+          refreshOrderError
         );
 
-        return {
-          success: false,
-          error:
-            "Unable to prepare checkout. Please try again.",
-        };
+        continue;
       }
 
+      /*
+       * For service orders, make sure the
+       * unpaid invoice exists and billing
+       * details are current.
+       */
       if (
         itemType ===
           "service" &&
@@ -882,7 +1189,7 @@ export async function prepareCheckoutOrder(
               item.id,
 
             serviceName:
-              pendingItem.product_name ??
+              pendingItem.product_name ||
               item.name,
 
             serviceDescription:
@@ -921,24 +1228,39 @@ export async function prepareCheckoutOrder(
               ),
           });
         } catch (error) {
-          return {
-            success: false,
-            error:
-              error instanceof
-                Error
-                ? error.message
-                : "Unable to prepare service invoice.",
-          };
+          console.error(
+            "Failed preparing reusable service invoice:",
+            error
+          );
+
+          /*
+           * Do NOT return this old broken
+           * checkout.
+           *
+           * Skip it and create a fresh
+           * order + fresh unpaid invoice below.
+           */
+          continue;
         }
       }
 
+      /*
+       * Valid reusable checkout.
+       */
       return {
         success: true,
+
         orderNumber:
           pendingOrder.order_number,
       };
     }
   }
+
+  /*
+   * ======================================
+   * CREATE NEW ORDER
+   * ======================================
+   */
 
   const orderId =
     randomUUID();
@@ -948,6 +1270,9 @@ export async function prepareCheckoutOrder(
 
   const orderNumber =
     createOrderNumber();
+
+  const now =
+    new Date().toISOString();
 
   const {
     error:
@@ -995,7 +1320,7 @@ export async function prepareCheckoutOrder(
         checkoutToken,
 
       terms_accepted_at:
-        new Date().toISOString(),
+        now,
 
       terms_version:
         TERMS_VERSION,
@@ -1009,10 +1334,17 @@ export async function prepareCheckoutOrder(
 
     return {
       success: false,
+
       error:
         "Unable to prepare checkout. Please try again.",
     };
   }
+
+  /*
+   * ======================================
+   * CREATE ORDER ITEM
+   * ======================================
+   */
 
   const {
     error:
@@ -1038,6 +1370,10 @@ export async function prepareCheckoutOrder(
           ? item.id
           : null,
 
+      /*
+       * Existing snapshot column name.
+       * Used for both products and services.
+       */
       product_name:
         item.name,
 
@@ -1064,10 +1400,17 @@ export async function prepareCheckoutOrder(
 
     return {
       success: false,
+
       error:
         "Unable to prepare checkout. Please try again.",
     };
   }
+
+  /*
+   * ======================================
+   * CREATE UNPAID SERVICE INVOICE
+   * ======================================
+   */
 
   if (
     itemType ===
@@ -1108,6 +1451,31 @@ export async function prepareCheckoutOrder(
           1,
       });
     } catch (error) {
+      console.error(
+        "Failed creating service invoice:",
+        error
+      );
+
+      /*
+       * Deleting the order cascades / removes
+       * its order item according to the
+       * existing relationship.
+       *
+       * Any unpaid invoice created for this
+       * order should also be removed first.
+       */
+      await admin
+        .from("invoices")
+        .delete()
+        .eq(
+          "order_id",
+          orderId
+        )
+        .eq(
+          "status",
+          "unpaid"
+        );
+
       await admin
         .from("orders")
         .delete()
@@ -1118,6 +1486,7 @@ export async function prepareCheckoutOrder(
 
       return {
         success: false,
+
         error:
           error instanceof
             Error
@@ -1129,6 +1498,7 @@ export async function prepareCheckoutOrder(
 
   return {
     success: true,
+
     orderNumber,
   };
 }
