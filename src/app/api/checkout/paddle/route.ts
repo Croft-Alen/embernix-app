@@ -27,10 +27,19 @@ type ResolvedDiscount = {
   code: string | null;
 };
 
+type CheckoutItemType =
+  | "product"
+  | "service";
+
 function normalizeCode(
-  value: string | null | undefined
+  value:
+    | string
+    | null
+    | undefined
 ) {
-  return String(value ?? "")
+  return String(
+    value ?? ""
+  )
     .trim()
     .toUpperCase();
 }
@@ -41,7 +50,8 @@ function buildHostedCheckoutUrl(
   discount: ResolvedDiscount
 ) {
   const baseUrl =
-    process.env.PADDLE_HOSTED_CHECKOUT_URL;
+    process.env
+      .PADDLE_HOSTED_CHECKOUT_URL;
 
   if (!baseUrl) {
     throw new Error(
@@ -49,7 +59,8 @@ function buildHostedCheckoutUrl(
     );
   }
 
-  const url = new URL(baseUrl);
+  const url =
+    new URL(baseUrl);
 
   url.searchParams.set(
     "transaction_id",
@@ -61,7 +72,9 @@ function buildHostedCheckoutUrl(
       "discount_code",
       discount.code
     );
-  } else if (discount.discountId) {
+  } else if (
+    discount.discountId
+  ) {
     url.searchParams.set(
       "discount_id",
       discount.discountId
@@ -84,7 +97,10 @@ function buildHostedCheckoutUrl(
 }
 
 function checkoutResponse(
-  body: Record<string, unknown>,
+  body: Record<
+    string,
+    unknown
+  >,
   orderNumber: string,
   status = 200
 ) {
@@ -116,7 +132,7 @@ async function resolveDiscount(
     | string
     | null
     | undefined,
-  productCurrency: string
+  currency: string
 ): Promise<ResolvedDiscount> {
   const code =
     normalizeCode(
@@ -177,7 +193,9 @@ async function resolveDiscount(
     );
   }
 
-  if (coupon.expires_at) {
+  if (
+    coupon.expires_at
+  ) {
     const expiry =
       new Date(
         coupon.expires_at
@@ -200,10 +218,11 @@ async function resolveDiscount(
     coupon.discount_type ===
       "flat" &&
     String(
-      coupon.currency ?? ""
+      coupon.currency ??
+        ""
     ).toUpperCase() !==
       String(
-        productCurrency
+        currency
       ).toUpperCase()
   ) {
     throw new Error(
@@ -228,7 +247,9 @@ export async function POST(
       await createClient();
 
     const {
-      data: { user },
+      data: {
+        user,
+      },
     } =
       await supabase.auth.getUser();
 
@@ -268,11 +289,14 @@ export async function POST(
       );
     }
 
+    const admin =
+      createAdminClient();
+
     const {
       data: order,
       error:
         orderError,
-    } = await supabase
+    } = await admin
       .from("orders")
       .select(`
         id,
@@ -281,6 +305,8 @@ export async function POST(
         status,
         payment_status,
         currency,
+        subtotal_cents,
+        total_cents,
         customer_email,
         paddle_transaction_id
       `)
@@ -317,7 +343,8 @@ export async function POST(
     ) {
       return checkoutResponse(
         {
-          alreadyPaid: true,
+          alreadyPaid:
+            true,
         },
         order.order_number
       );
@@ -344,11 +371,15 @@ export async function POST(
       data: item,
       error:
         itemError,
-    } = await supabase
+    } = await admin
       .from("order_items")
       .select(`
         id,
+        item_type,
         product_id,
+        service_id,
+        product_name,
+        unit_price_cents,
         quantity
       `)
       .eq(
@@ -373,69 +404,22 @@ export async function POST(
       );
     }
 
-    const {
-      data: product,
-      error:
-        productError,
-    } = await supabase
-      .from("products")
-      .select(`
-        id,
-        paddle_price_id,
-        active,
-        currency
-      `)
-      .eq(
-        "id",
-        item.product_id
-      )
-      .maybeSingle();
+    const itemType =
+      String(
+        item.item_type ??
+          "product"
+      ) as CheckoutItemType;
 
     if (
-      productError ||
-      !product
+      itemType !==
+        "product" &&
+      itemType !==
+        "service"
     ) {
       return NextResponse.json(
         {
           error:
-            "Product was not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    if (
-      !product.paddle_price_id
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "This product is not connected to checkout yet.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    let discount:
-      ResolvedDiscount;
-
-    try {
-      discount =
-        await resolveDiscount(
-          body?.couponCode,
-          product.currency
-        );
-    } catch (error) {
-      return NextResponse.json(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Coupon is invalid.",
+            "Unsupported checkout item.",
         },
         {
           status: 400,
@@ -446,6 +430,524 @@ export async function POST(
     const paddle =
       getPaddle();
 
+    /*
+     * ======================================
+     * PRODUCT CHECKOUT
+     * ======================================
+     */
+    if (
+      itemType ===
+      "product"
+    ) {
+      if (
+        !item.product_id
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Product information is missing.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      const {
+        data: product,
+        error:
+          productError,
+      } = await admin
+        .from("products")
+        .select(`
+          id,
+          paddle_price_id,
+          active,
+          currency
+        `)
+        .eq(
+          "id",
+          item.product_id
+        )
+        .maybeSingle();
+
+      if (
+        productError ||
+        !product
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Product was not found.",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
+
+      if (
+        !product.paddle_price_id
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "This product is not connected to checkout yet.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      let discount:
+        ResolvedDiscount;
+
+      try {
+        discount =
+          await resolveDiscount(
+            body?.couponCode,
+            product.currency
+          );
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error:
+              error instanceof
+                Error
+                ? error.message
+                : "Coupon is invalid.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      if (
+        order.paddle_transaction_id
+      ) {
+        try {
+          await paddle.transactions.update(
+            order.paddle_transaction_id,
+            {
+              discountId:
+                discount.discountId,
+
+              customData: {
+                embernix_payment_type:
+                  "order",
+
+                embernix_item_type:
+                  "product",
+
+                embernix_order_id:
+                  order.id,
+
+                embernix_order_number:
+                  order.order_number,
+
+                embernix_user_id:
+                  user.id,
+
+                embernix_product_id:
+                  product.id,
+
+                embernix_coupon_code:
+                  discount.code,
+              },
+            } as never
+          );
+        } catch (error) {
+          console.error(
+            "Failed to update Paddle product transaction:",
+            error
+          );
+
+          return NextResponse.json(
+            {
+              error:
+                "Unable to update Paddle checkout.",
+            },
+            {
+              status: 400,
+            }
+          );
+        }
+
+        const checkoutUrl =
+          buildHostedCheckoutUrl(
+            order.paddle_transaction_id,
+
+            order.customer_email ??
+              user.email ??
+              "",
+
+            discount
+          );
+
+        return checkoutResponse(
+          {
+            checkoutUrl,
+
+            transactionId:
+              order.paddle_transaction_id,
+
+            couponCode:
+              discount.code,
+
+            discountId:
+              discount.discountId,
+          },
+          order.order_number
+        );
+      }
+
+      const transaction =
+        await paddle.transactions.create(
+          {
+            items: [
+              {
+                priceId:
+                  product.paddle_price_id,
+
+                quantity:
+                  Math.max(
+                    Number(
+                      item.quantity ??
+                        1
+                    ),
+                    1
+                  ),
+              },
+            ],
+
+            collectionMode:
+              "automatic",
+
+            discountId:
+              discount.discountId,
+
+            customData: {
+              embernix_payment_type:
+                "order",
+
+              embernix_item_type:
+                "product",
+
+              embernix_order_id:
+                order.id,
+
+              embernix_order_number:
+                order.order_number,
+
+              embernix_user_id:
+                user.id,
+
+              embernix_product_id:
+                product.id,
+
+              embernix_coupon_code:
+                discount.code,
+            },
+          } as never
+        );
+
+      if (
+        !transaction?.id
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Paddle did not return a transaction.",
+          },
+          {
+            status: 502,
+          }
+        );
+      }
+
+      if (
+        discount.discountId &&
+        transaction.discountId !==
+          discount.discountId
+      ) {
+        console.error(
+          "Paddle transaction was created without expected discount.",
+          {
+            expected:
+              discount.discountId,
+
+            received:
+              transaction.discountId,
+          }
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Paddle did not apply the selected coupon. Checkout was stopped.",
+          },
+          {
+            status: 502,
+          }
+        );
+      }
+
+      const {
+        data:
+          updatedOrder,
+        error:
+          updateError,
+      } = await admin
+        .from("orders")
+        .update({
+          payment_provider:
+            "paddle",
+
+          provider_transaction_id:
+            transaction.id,
+
+          paddle_transaction_id:
+            transaction.id,
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          "id",
+          order.id
+        )
+        .eq(
+          "payment_status",
+          "unpaid"
+        )
+        .select("id")
+        .maybeSingle();
+
+      if (
+        updateError ||
+        !updatedOrder
+      ) {
+        console.error(
+          "Failed to save Paddle transaction:",
+          updateError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Unable to connect payment to your order.",
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+
+      const checkoutUrl =
+        buildHostedCheckoutUrl(
+          transaction.id,
+
+          order.customer_email ??
+            user.email ??
+            "",
+
+          discount
+        );
+
+      return checkoutResponse(
+        {
+          checkoutUrl,
+
+          transactionId:
+            transaction.id,
+
+          couponCode:
+            discount.code,
+
+          discountId:
+            discount.discountId,
+        },
+        order.order_number
+      );
+    }
+
+    /*
+     * ======================================
+     * SERVICE CHECKOUT
+     * ======================================
+     */
+
+    if (
+      !item.service_id
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Service information is missing.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const {
+      data: service,
+      error:
+        serviceError,
+    } = await admin
+      .from("services")
+      .select(`
+        id,
+        name,
+        short_description,
+        active,
+        currency
+      `)
+      .eq(
+        "id",
+        item.service_id
+      )
+      .maybeSingle();
+
+    if (
+      serviceError ||
+      !service
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Service was not found.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    if (!service.active) {
+      return NextResponse.json(
+        {
+          error:
+            "This service is no longer available.",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    /*
+     * Coupons are currently product-only.
+     */
+    const noDiscount:
+      ResolvedDiscount = {
+      discountId: null,
+      code: null,
+    };
+
+    const unitPrice =
+      Number(
+        item.unit_price_cents
+      );
+
+    const quantity =
+      Math.max(
+        Number(
+          item.quantity ??
+            1
+        ),
+        1
+      );
+
+    if (
+      !Number.isFinite(
+        unitPrice
+      ) ||
+      unitPrice <= 0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Service price is invalid.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const serviceTransactionItem =
+      {
+        quantity,
+
+        price: {
+          name:
+            service.name,
+
+          description:
+            service.short_description ||
+            `Embernix ${service.name}`,
+
+          billingCycle:
+            null,
+
+          trialPeriod:
+            null,
+
+          taxMode:
+            "internal",
+
+          unitPrice: {
+            amount:
+              String(
+                unitPrice
+              ),
+
+            currencyCode:
+              order.currency,
+          },
+
+          product: {
+            name:
+              service.name,
+
+            description:
+              service.short_description ||
+              "Embernix professional service",
+
+            taxCategory:
+              "standard",
+          },
+        },
+      };
+
+    const serviceCustomData =
+      {
+        embernix_payment_type:
+          "order",
+
+        embernix_item_type:
+          "service",
+
+        embernix_order_id:
+          order.id,
+
+        embernix_order_number:
+          order.order_number,
+
+        embernix_user_id:
+          user.id,
+
+        embernix_service_id:
+          service.id,
+      };
+
+    /*
+     * Reuse existing Paddle transaction.
+     */
     if (
       order.paddle_transaction_id
     ) {
@@ -453,20 +955,24 @@ export async function POST(
         await paddle.transactions.update(
           order.paddle_transaction_id,
           {
-            discountId:
-              discount.discountId,
-          }
+            items: [
+              serviceTransactionItem,
+            ],
+
+            customData:
+              serviceCustomData,
+          } as never
         );
       } catch (error) {
         console.error(
-          "Failed to update Paddle transaction discount:",
+          "Failed to reuse service Paddle transaction:",
           error
         );
 
         return NextResponse.json(
           {
             error:
-              "Unable to apply this coupon to Paddle checkout.",
+              "Unable to prepare service checkout.",
           },
           {
             status: 400,
@@ -482,7 +988,7 @@ export async function POST(
             user.email ??
             "",
 
-          discount
+          noDiscount
         );
 
       return checkoutResponse(
@@ -492,56 +998,28 @@ export async function POST(
           transactionId:
             order.paddle_transaction_id,
 
-          couponCode:
-            discount.code,
+          couponCode: null,
 
-          discountId:
-            discount.discountId,
+          discountId: null,
         },
         order.order_number
       );
     }
 
     const transaction =
-      await paddle.transactions.create({
-        items: [
-          {
-            priceId:
-              product.paddle_price_id,
+      await paddle.transactions.create(
+        {
+          items: [
+            serviceTransactionItem,
+          ],
 
-            quantity:
-              Math.max(
-                Number(
-                  item.quantity ?? 1
-                ),
-                1
-              ),
-          },
-        ],
+          collectionMode:
+            "automatic",
 
-        collectionMode:
-          "automatic",
-
-        discountId:
-          discount.discountId,
-
-        customData: {
-          embernix_order_id:
-            order.id,
-
-          embernix_order_number:
-            order.order_number,
-
-          embernix_user_id:
-            user.id,
-
-          embernix_product_id:
-            product.id,
-
-          embernix_coupon_code:
-            discount.code,
-        },
-      });
+          customData:
+            serviceCustomData,
+        } as never
+      );
 
     if (
       !transaction?.id
@@ -557,40 +1035,9 @@ export async function POST(
       );
     }
 
-    if (
-      discount.discountId &&
-      transaction.discountId !==
-        discount.discountId
-    ) {
-      console.error(
-        "Paddle transaction was created without expected discount.",
-        {
-          expected:
-            discount.discountId,
-
-          received:
-            transaction.discountId,
-        }
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Paddle did not apply the selected coupon. Checkout was stopped.",
-        },
-        {
-          status: 502,
-        }
-      );
-    }
-
-    const admin =
-      createAdminClient();
-
     const {
       data:
         updatedOrder,
-
       error:
         updateError,
     } = await admin
@@ -624,7 +1071,7 @@ export async function POST(
       !updatedOrder
     ) {
       console.error(
-        "Failed to save Paddle transaction:",
+        "Failed to save service Paddle transaction:",
         updateError
       );
 
@@ -647,7 +1094,7 @@ export async function POST(
           user.email ??
           "",
 
-        discount
+        noDiscount
       );
 
     return checkoutResponse(
@@ -657,11 +1104,9 @@ export async function POST(
         transactionId:
           transaction.id,
 
-        couponCode:
-          discount.code,
+        couponCode: null,
 
-        discountId:
-          discount.discountId,
+        discountId: null,
       },
       order.order_number
     );
