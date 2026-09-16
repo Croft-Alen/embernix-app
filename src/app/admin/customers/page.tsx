@@ -4,6 +4,10 @@ import {
   createAdminClient,
 } from "@/lib/supabase/admin";
 
+import {
+  getProviderAvatar,
+} from "@/lib/auth/profile";
+
 function formatMoney(
   cents: number,
   currency = "USD"
@@ -45,7 +49,6 @@ function formatDate(
 type CustomerRow = {
   id: string;
   full_name: string | null;
-  avatar_url: string | null;
   created_at: string | null;
 };
 
@@ -57,6 +60,7 @@ type CustomerStats = {
   currency: string;
   productsOwned: number;
   lastPurchase: string | null;
+  avatar: string | null;
 };
 
 export default async function AdminCustomersPage() {
@@ -71,7 +75,6 @@ export default async function AdminCustomersPage() {
     .select(`
       id,
       full_name,
-      avatar_url,
       created_at
     `)
     .order(
@@ -150,10 +153,19 @@ export default async function AdminCustomersPage() {
                 ),
             ]);
 
+          const authUser =
+            authResult.data.user;
+
           const email =
-            authResult.data.user
-              ?.email ??
+            authUser?.email ??
             "—";
+
+          const avatar =
+            authUser
+              ? getProviderAvatar(
+                  authUser
+                )
+              : null;
 
           const orders =
             ordersResult.data ??
@@ -213,6 +225,8 @@ export default async function AdminCustomersPage() {
               0,
 
             lastPurchase,
+
+            avatar,
           };
         }
       )
@@ -306,10 +320,10 @@ export default async function AdminCustomersPage() {
                       >
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
-                            {profile.avatar_url ? (
+                            {stats?.avatar ? (
                               <img
                                 src={
-                                  profile.avatar_url
+                                  stats.avatar
                                 }
                                 alt=""
                                 className="h-10 w-10 rounded-full object-cover"

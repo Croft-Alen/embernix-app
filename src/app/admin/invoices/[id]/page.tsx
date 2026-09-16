@@ -20,6 +20,10 @@ import {
   createAdminClient,
 } from "@/lib/supabase/admin";
 
+import {
+  getProviderAvatar,
+} from "@/lib/auth/profile";
+
 type InvoicePageProps = {
   params: Promise<{
     id: string;
@@ -198,7 +202,6 @@ export default async function AdminInvoicePage({
             .select(`
               id,
               full_name,
-              avatar_url,
               created_at
             `)
             .eq(
@@ -256,11 +259,11 @@ export default async function AdminInvoicePage({
     "—";
 
   const customerAvatar =
-    profile?.avatar_url ||
     authUser
-      ?.user_metadata
-      ?.avatar_url ||
-    null;
+      ? getProviderAvatar(
+          authUser
+        )
+      : null;
 
   const canEdit =
     invoice.status ===

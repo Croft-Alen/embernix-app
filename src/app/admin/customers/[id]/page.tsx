@@ -15,6 +15,10 @@ import {
   createAdminClient,
 } from "@/lib/supabase/admin";
 
+import {
+  getProviderAvatar,
+} from "@/lib/auth/profile";
+
 type CustomerPageProps = {
   params: Promise<{
     id: string;
@@ -101,7 +105,6 @@ export default async function AdminCustomerDetailPage({
         .select(`
           id,
           full_name,
-          avatar_url,
           created_at,
           updated_at
         `)
@@ -252,11 +255,11 @@ export default async function AdminCustomerDetailPage({
     "—";
 
   const avatar =
-    profile?.avatar_url ||
     authUser
-      ?.user_metadata
-      ?.avatar_url ||
-    null;
+      ? getProviderAvatar(
+          authUser
+        )
+      : null;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-8">
