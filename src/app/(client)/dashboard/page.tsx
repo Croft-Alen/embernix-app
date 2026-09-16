@@ -125,6 +125,13 @@ export default async function DashboardPage() {
             .eq(
               "user_id",
               userId
+            )
+            .in(
+              "status",
+              [
+                "open",
+                "in_progress",
+              ]
             ),
         ])
       : [
@@ -175,7 +182,7 @@ export default async function DashboardPage() {
 
     {
       label:
-        "Tickets",
+        "Open tickets",
       value:
         ticketsResult.count ??
         0,
