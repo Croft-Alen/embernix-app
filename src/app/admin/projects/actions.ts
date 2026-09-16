@@ -39,7 +39,9 @@ async function requireAdmin() {
     .from(
       "admin_users"
     )
-    .select("user_id")
+    .select(
+      "user_id"
+    )
     .eq(
       "user_id",
       user.id
@@ -74,7 +76,7 @@ export async function updateProject(
       ) ?? ""
     );
 
-  const allowed = [
+  const allowedStatuses = [
     "awaiting_requirements",
     "in_progress",
     "completed",
@@ -82,7 +84,7 @@ export async function updateProject(
   ];
 
   if (
-    !allowed.includes(
+    !allowedStatuses.includes(
       status
     )
   ) {
@@ -90,20 +92,6 @@ export async function updateProject(
       "Invalid project status."
     );
   }
-
-  const deliveryNote =
-    String(
-      formData.get(
-        "deliveryNote"
-      ) ?? ""
-    ).trim();
-
-  const deliveryUrl =
-    String(
-      formData.get(
-        "deliveryUrl"
-      ) ?? ""
-    ).trim();
 
   const adminNotes =
     String(
@@ -113,29 +101,71 @@ export async function updateProject(
     ).trim();
 
   const {
+    data:
+      currentProject,
+    error:
+      currentProjectError,
+  } = await admin
+    .from("projects")
+    .select(`
+      id,
+      status,
+      completed_at
+    `)
+    .eq(
+      "id",
+      projectId
+    )
+    .maybeSingle();
+
+  if (
+    currentProjectError ||
+    !currentProject
+  ) {
+    console.error(
+      "Unable to load project before update:",
+      currentProjectError
+    );
+
+    throw new Error(
+      "Project not found."
+    );
+  }
+
+  let completedAt =
+    currentProject.completed_at;
+
+  if (
+    status ===
+      "completed" &&
+    currentProject.status !==
+      "completed"
+  ) {
+    completedAt =
+      new Date().toISOString();
+  }
+
+  if (
+    status !==
+    "completed"
+  ) {
+    completedAt =
+      null;
+  }
+
+  const {
     error,
   } = await admin
     .from("projects")
     .update({
       status,
 
-      delivery_note:
-        deliveryNote ||
-        null,
-
-      delivery_url:
-        deliveryUrl ||
-        null,
-
       admin_notes:
         adminNotes ||
         null,
 
       completed_at:
-        status ===
-        "completed"
-          ? new Date().toISOString()
-          : null,
+        completedAt,
 
       updated_at:
         new Date().toISOString(),
@@ -146,6 +176,11 @@ export async function updateProject(
     );
 
   if (error) {
+    console.error(
+      "Failed updating project:",
+      error
+    );
+
     throw new Error(
       "Unable to update project."
     );
@@ -158,158 +193,12 @@ export async function updateProject(
   revalidatePath(
     `/projects/${projectId}`
   );
-}
-
-export async function sendAdminProjectMessage(
-  projectId: string,
-  formData: FormData
-) {
-  const {
-    user,
-    admin,
-  } =
-    await requireAdmin();
-
-  const message =
-    String(
-      formData.get(
-        "message"
-      ) ?? ""
-    ).trim();
-
-  const files =
-    formData
-      .getAll("files")
-      .filter(
-        (
-          value
-        ): value is File =>
-          value instanceof
-            File &&
-          value.size > 0
-      );
-
-  if (
-    !message &&
-    files.length === 0
-  ) {
-    throw new Error(
-      "Enter a message or attach a file."
-    );
-  }
-
-  const {
-    data:
-      createdMessage,
-    error,
-  } = await admin
-    .from(
-      "project_messages"
-    )
-    .insert({
-      project_id:
-        projectId,
-
-      sender_user_id:
-        user.id,
-
-      sender_type:
-        "admin",
-
-      message:
-        message ||
-        null,
-    })
-    .select("id")
-    .single();
-
-  if (
-    error ||
-    !createdMessage
-  ) {
-    throw new Error(
-      "Unable to send message."
-    );
-  }
-
-  for (
-    const file
-    of files.slice(
-      0,
-      5
-    )
-  ) {
-    if (
-      file.size >
-      10 * 1024 * 1024
-    ) {
-      continue;
-    }
-
-    const extension =
-      file.name
-        .split(".")
-        .pop()
-        ?.toLowerCase() ||
-      "file";
-
-    const path =
-      `${projectId}/${createdMessage.id}/${crypto.randomUUID()}.${extension}`;
-
-    const buffer =
-      Buffer.from(
-        await file.arrayBuffer()
-      );
-
-    const {
-      error:
-        uploadError,
-    } = await admin.storage
-      .from(
-        "project-files"
-      )
-      .upload(
-        path,
-        buffer,
-        {
-          contentType:
-            file.type ||
-            "application/octet-stream",
-        }
-      );
-
-    if (uploadError) {
-      continue;
-    }
-
-    await admin
-      .from(
-        "project_message_attachments"
-      )
-      .insert({
-        message_id:
-          createdMessage.id,
-
-        storage_path:
-          path,
-
-        file_name:
-          file.name,
-
-        file_type:
-          file.type ||
-          null,
-
-        file_size:
-          file.size,
-      });
-  }
 
   revalidatePath(
-    `/admin/projects/${projectId}`
+    "/admin/projects"
   );
 
   revalidatePath(
-    `/projects/${projectId}`
+    "/projects"
   );
 }
