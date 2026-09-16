@@ -55,7 +55,7 @@ export default async function ResetPasswordPage({
           color: "var(--muted)",
         }}
       >
-        Enter a new password for your Embernix account.
+        Enter and confirm your new password.
       </p>
 
       {error && (

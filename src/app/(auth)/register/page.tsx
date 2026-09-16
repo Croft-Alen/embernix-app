@@ -43,8 +43,7 @@ export default async function RegisterPage({
           color: "var(--muted)",
         }}
       >
-        Create your account to manage purchases, projects, invoices, and
-        support.
+        Create your Embernix account.
       </p>
 
       {error && (
@@ -198,7 +197,7 @@ export default async function RegisterPage({
         />
 
         <span
-          className="text-xs uppercase tracking-[0.14em]"
+          className="whitespace-nowrap text-xs uppercase tracking-[0.14em]"
           style={{
             color: "var(--muted)",
           }}
@@ -218,7 +217,7 @@ export default async function RegisterPage({
         <form action={signInWithGoogle}>
           <button
             type="submit"
-            className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
             style={{
               borderColor: "var(--border)",
               background: "var(--background)",
@@ -226,7 +225,7 @@ export default async function RegisterPage({
             }}
           >
             <img
-              src="/auth/google.svg"
+              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
               alt=""
               width={20}
               height={20}
@@ -240,7 +239,7 @@ export default async function RegisterPage({
         <form action={signInWithDiscord}>
           <button
             type="submit"
-            className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
             style={{
               borderColor: "var(--border)",
               background: "var(--background)",
@@ -248,11 +247,11 @@ export default async function RegisterPage({
             }}
           >
             <img
-              src="/auth/discord.svg"
+              src="https://cdn.simpleicons.org/discord/5865F2"
               alt=""
-              width={20}
-              height={20}
-              className="h-5 w-5 shrink-0"
+              width={21}
+              height={21}
+              className="h-[21px] w-[21px] shrink-0"
             />
 
             Discord

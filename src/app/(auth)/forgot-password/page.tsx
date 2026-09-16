@@ -56,8 +56,7 @@ export default async function ForgotPasswordPage({
           color: "var(--muted)",
         }}
       >
-        Enter the email associated with your Embernix account and we&apos;ll
-        send you a reset link.
+        Enter your email and we&apos;ll send you a password reset link.
       </p>
 
       {(error || message) && <div className="h-6" />}

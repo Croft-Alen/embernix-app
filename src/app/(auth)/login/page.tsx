@@ -44,7 +44,7 @@ export default async function LoginPage({
           color: "var(--muted)",
         }}
       >
-        Access your products, projects, orders, invoices, and support.
+        Enter your details to continue.
       </p>
 
       {(error || message) && <div className="h-6" />}
@@ -162,7 +162,7 @@ export default async function LoginPage({
         />
 
         <span
-          className="text-xs uppercase tracking-[0.14em]"
+          className="whitespace-nowrap text-xs uppercase tracking-[0.14em]"
           style={{
             color: "var(--muted)",
           }}
@@ -182,7 +182,7 @@ export default async function LoginPage({
         <form action={signInWithGoogle}>
           <button
             type="submit"
-            className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
             style={{
               borderColor: "var(--border)",
               background: "var(--background)",
@@ -190,7 +190,7 @@ export default async function LoginPage({
             }}
           >
             <img
-              src="/auth/google.svg"
+              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
               alt=""
               width={20}
               height={20}
@@ -204,7 +204,7 @@ export default async function LoginPage({
         <form action={signInWithDiscord}>
           <button
             type="submit"
-            className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-[14px] border text-sm font-medium transition-opacity hover:opacity-75"
             style={{
               borderColor: "var(--border)",
               background: "var(--background)",
@@ -212,11 +212,11 @@ export default async function LoginPage({
             }}
           >
             <img
-              src="/auth/discord.svg"
+              src="https://cdn.simpleicons.org/discord/5865F2"
               alt=""
-              width={20}
-              height={20}
-              className="h-5 w-5 shrink-0"
+              width={21}
+              height={21}
+              className="h-[21px] w-[21px] shrink-0"
             />
 
             Discord
