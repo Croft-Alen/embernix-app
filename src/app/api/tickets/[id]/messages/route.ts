@@ -15,6 +15,10 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
+import {
+  createNotification,
+} from "@/lib/notifications/create-notification";
+
 export const runtime =
   "nodejs";
 
@@ -522,6 +526,38 @@ export async function POST(
         "id",
         ticket.id
       );
+
+    if (
+      isAdmin
+    ) {
+      await createNotification({
+        userId:
+          ticket.user_id,
+
+        type:
+          "ticket_reply",
+
+        title:
+          "New ticket reply",
+
+        message:
+          `Embernix replied to your ticket.`,
+
+        href:
+          `/tickets/${ticket.id}`,
+
+        metadata: {
+          ticketId:
+            ticket.id,
+
+          replyId:
+            reply.id,
+        },
+
+        dedupeKey:
+          `ticket-reply:${reply.id}`,
+      });
+    }
 
     return NextResponse.json({
       success:

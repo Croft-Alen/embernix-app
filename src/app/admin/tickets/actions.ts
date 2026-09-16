@@ -16,6 +16,10 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
+import {
+  createNotification,
+} from "@/lib/notifications/create-notification";
+
 const validStatuses =
   new Set([
     "open",
@@ -263,6 +267,26 @@ export async function updateTicketStatus(
     return;
   }
 
+  const {
+    data:
+      ticket,
+  } = await admin
+    .from(
+      "tickets"
+    )
+    .select(
+      "id, user_id, status"
+    )
+    .eq(
+      "id",
+      ticketId
+    )
+    .maybeSingle();
+
+  if (!ticket) {
+    return;
+  }
+
   const now =
     new Date().toISOString();
 
@@ -298,6 +322,71 @@ export async function updateTicketStatus(
     );
 
     return;
+  }
+
+  if (
+    ticket.status !==
+    status
+  ) {
+    if (
+      status ===
+      "resolved"
+    ) {
+      await createNotification({
+        userId:
+          ticket.user_id,
+
+        type:
+          "ticket_resolved",
+
+        title:
+          "Ticket resolved",
+
+        message:
+          "Your ticket has been marked as resolved.",
+
+        href:
+          `/tickets/${ticket.id}`,
+
+        metadata: {
+          ticketId:
+            ticket.id,
+        },
+
+        dedupeKey:
+          `ticket-status:${ticket.id}:resolved:${now}`,
+      });
+    }
+
+    if (
+      status ===
+      "closed"
+    ) {
+      await createNotification({
+        userId:
+          ticket.user_id,
+
+        type:
+          "ticket_closed",
+
+        title:
+          "Ticket closed",
+
+        message:
+          "Your ticket has been closed.",
+
+        href:
+          `/tickets/${ticket.id}`,
+
+        metadata: {
+          ticketId:
+            ticket.id,
+        },
+
+        dedupeKey:
+          `ticket-status:${ticket.id}:closed:${now}`,
+      });
+    }
   }
 
   revalidatePath(

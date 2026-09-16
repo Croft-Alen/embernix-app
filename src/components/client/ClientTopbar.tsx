@@ -36,12 +36,15 @@ import {
 
 import ClientSidebar from "@/components/client/ClientSidebar";
 
+import NotificationBell from "@/components/notifications/NotificationBell";
+
 type ClientTopbarProps = {
   name: string;
   email: string;
   avatarUrl: string | null;
   initials: string;
   isAdmin: boolean;
+  userId: string;
 };
 
 function DiscordIcon({
@@ -139,6 +142,7 @@ export function ClientTopbar({
   avatarUrl,
   initials,
   isAdmin,
+  userId,
 }: ClientTopbarProps) {
   const router =
     useRouter();
@@ -457,14 +461,11 @@ export function ClientTopbar({
               </button>
             )}
 
-            <button
-              type="button"
-              aria-label="Notifications"
-              title="Notifications"
-              className="relative flex h-10 w-10 items-center justify-center rounded-xl text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
-            >
-              <Bell className="h-[19px] w-[19px]" />
-            </button>
+            <NotificationBell
+              userId={
+                userId
+              }
+            />
 
             <div
               ref={
