@@ -1,6 +1,14 @@
-import { redirect } from "next/navigation";
+import type {
+  ReactNode,
+} from "react";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  redirect,
+} from "next/navigation";
+
+import {
+  createClient,
+} from "@/lib/supabase/server";
 
 import {
   getAvatarUrl,
@@ -15,19 +23,25 @@ import AdminTopbar from "@/components/admin/AdminTopbar";
 export default async function AdminLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: ReactNode;
 }>) {
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: {
+      user,
+    },
+  } =
+    await supabase.auth.getUser();
 
   if (!user) {
     redirect("/login");
   }
 
-  const { data: admin } = await supabase
+  const {
+    data: admin,
+  } = await supabase
     .from("admin_users")
     .select("user_id")
     .eq("user_id", user.id)
@@ -37,28 +51,37 @@ export default async function AdminLayout({
     redirect("/dashboard");
   }
 
-  const { data } = await supabase
+  const {
+    data,
+  } = await supabase
     .from("profiles")
     .select(
-      "id, full_name, avatar_url, created_at, updated_at"
+      "id, full_name, created_at, updated_at"
     )
     .eq("id", user.id)
     .maybeSingle();
 
   const profile =
-    (data ?? null) as UserProfile | null;
+    (
+      data ??
+      null
+    ) as UserProfile | null;
 
-  const displayName = getDisplayName(
-    user,
-    profile
-  );
+  const displayName =
+    getDisplayName(
+      user,
+      profile
+    );
 
-  const avatarUrl = getAvatarUrl(
-    user,
-    profile
-  );
+  const avatarUrl =
+    getAvatarUrl(
+      user
+    );
 
-  const initials = getInitials(displayName);
+  const initials =
+    getInitials(
+      displayName
+    );
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -68,13 +91,26 @@ export default async function AdminLayout({
 
       <div className="min-h-screen lg:pl-[270px]">
         <AdminTopbar
-          name={displayName}
-          email={user.email ?? ""}
-          avatarUrl={avatarUrl}
-          initials={initials}
+          name={
+            displayName
+          }
+          email={
+            user.email ??
+            ""
+          }
+          avatarUrl={
+            avatarUrl
+          }
+          initials={
+            initials
+          }
         />
 
-        <main>{children}</main>
+        <main>
+          {
+            children
+          }
+        </main>
       </div>
     </div>
   );

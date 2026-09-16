@@ -9,10 +9,6 @@ export type UserProfile = {
     | string
     | null;
 
-  avatar_url:
-    | string
-    | null;
-
   created_at: string;
 
   updated_at: string;
@@ -59,25 +55,8 @@ export function getDisplayName(
 }
 
 export function getAvatarUrl(
-  user: User,
-  profile?:
-    | UserProfile
-    | null
+  user: User
 ) {
-  /*
-   * User-uploaded Embernix
-   * avatar always wins.
-   */
-  if (
-    profile?.avatar_url
-  ) {
-    return profile.avatar_url;
-  }
-
-  /*
-   * Otherwise fall back to
-   * Google / Discord avatar.
-   */
   return getProviderAvatar(
     user
   );
