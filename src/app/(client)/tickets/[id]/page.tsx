@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   CalendarDays,
   Package,
-  Send,
   Ticket,
 } from "lucide-react";
 
@@ -15,13 +14,16 @@ import {
 
 import Button from "@/components/ui/Button";
 
+import TicketConversation, {
+  type TicketMessage,
+} from "@/components/tickets/TicketConversation";
+
 import {
   createClient,
 } from "@/lib/supabase/server";
 
 import {
   closeTicket,
-  replyToTicket,
 } from "../actions";
 
 type TicketPageProps = {
@@ -84,6 +86,7 @@ function formatDate(
     {
       dateStyle:
         "medium",
+
       timeStyle:
         "short",
     }
@@ -99,7 +102,8 @@ export default async function TicketPage({
 }: TicketPageProps) {
   const {
     id,
-  } = await params;
+  } =
+    await params;
 
   const supabase =
     await createClient();
@@ -135,13 +139,16 @@ export default async function TicketPage({
       created_at,
       updated_at,
       closed_at,
+
       ticket_topics (
         name
       ),
+
       ticket_priorities (
         name,
         slug
       ),
+
       products (
         id,
         name
@@ -178,7 +185,20 @@ export default async function TicketPage({
       user_id,
       message,
       is_admin,
-      created_at
+      created_at,
+
+      ticket_attachments (
+        id,
+        file_name,
+        file_type,
+        file_size
+      ),
+
+      ticket_reactions (
+        id,
+        user_id,
+        emoji
+      )
     `)
     .eq(
       "ticket_id",
@@ -196,7 +216,7 @@ export default async function TicketPage({
     repliesError
   ) {
     console.error(
-      "Failed to load ticket replies:",
+      "Failed to load ticket messages:",
       repliesError
     );
   }
@@ -221,6 +241,50 @@ export default async function TicketPage({
     )
       ? ticket.products[0]
       : ticket.products;
+
+  const messages:
+    TicketMessage[] =
+    (
+      replies ??
+      []
+    ).map(
+      (
+        reply
+      ) => ({
+        id:
+          reply.id,
+
+        user_id:
+          reply.user_id,
+
+        message:
+          reply.message,
+
+        is_admin:
+          reply.is_admin,
+
+        created_at:
+          reply.created_at,
+
+        attachments:
+          reply.ticket_attachments ??
+          [],
+
+        reactions:
+          reply.ticket_reactions ??
+          [],
+      })
+    );
+
+  const name =
+    user.user_metadata
+      ?.full_name ||
+    user.user_metadata
+      ?.name ||
+    user.email?.split(
+      "@"
+    )[0] ||
+    "You";
 
   const isClosed =
     ticket.status ===
@@ -321,117 +385,23 @@ export default async function TicketPage({
       </section>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_270px]">
-        <section className="min-w-0 overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--surface)]">
-          <div className="border-b border-[var(--border-light)] px-5 py-4 sm:px-6">
-            <h2 className="text-sm font-semibold text-[var(--foreground)]">
-              Conversation
-            </h2>
-          </div>
-
-          <div className="space-y-5 px-4 py-5 sm:px-6">
-            {(replies ??
-              []).map(
-              (
-                reply
-              ) => (
-                <div
-                  key={
-                    reply.id
-                  }
-                  className={`flex ${
-                    reply.is_admin
-                      ? "justify-start"
-                      : "justify-end"
-                  }`}
-                >
-                  <div
-                    className={`max-w-[88%] rounded-[18px] px-4 py-3 sm:max-w-[76%] ${
-                      reply.is_admin
-                        ? "border border-[var(--border)] bg-[var(--surface-secondary)]"
-                        : "bg-[var(--primary)] text-white"
-                    }`}
-                  >
-                    <div className="mb-2 flex items-center justify-between gap-5">
-                      <p
-                        className={`text-xs font-semibold ${
-                          reply.is_admin
-                            ? "text-[var(--foreground)]"
-                            : "text-white"
-                        }`}
-                      >
-                        {reply.is_admin
-                          ? "Embernix"
-                          : "You"}
-                      </p>
-
-                      <p
-                        className={`text-[10px] ${
-                          reply.is_admin
-                            ? "text-[var(--muted)]"
-                            : "text-white/70"
-                        }`}
-                      >
-                        {formatDate(
-                          reply.created_at
-                        )}
-                      </p>
-                    </div>
-
-                    <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                      {
-                        reply.message
-                      }
-                    </p>
-                  </div>
-                </div>
-              )
-            )}
-          </div>
-
-          {isClosed ? (
-            <div className="border-t border-[var(--border-light)] px-5 py-5 text-center text-sm text-[var(--muted)]">
-              This ticket is closed.
-            </div>
-          ) : (
-            <form
-              action={
-                replyToTicket
-              }
-              className="border-t border-[var(--border-light)] p-4 sm:p-5"
-            >
-              <input
-                type="hidden"
-                name="ticketId"
-                value={
-                  ticket.id
-                }
-              />
-
-              <textarea
-                name="message"
-                required
-                maxLength={
-                  10000
-                }
-                rows={
-                  4
-                }
-                placeholder="Write a reply..."
-                className="w-full resize-y rounded-xl border border-[var(--border)] bg-white px-3.5 py-3 text-sm leading-6 text-[var(--foreground)] outline-none placeholder:text-[var(--muted-light)] focus:border-[var(--primary)]"
-              />
-
-              <div className="mt-3 flex justify-end">
-                <Button
-                  type="submit"
-                >
-                  <Send className="h-4 w-4" />
-
-                  Send reply
-                </Button>
-              </div>
-            </form>
-          )}
-        </section>
+        <TicketConversation
+          ticketId={
+            ticket.id
+          }
+          currentUserId={
+            user.id
+          }
+          customerName={
+            name
+          }
+          messages={
+            messages
+          }
+          closed={
+            isClosed
+          }
+        />
 
         <aside className="h-fit rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 xl:sticky xl:top-[104px]">
           <InfoItem

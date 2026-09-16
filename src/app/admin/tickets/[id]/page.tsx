@@ -9,7 +9,6 @@ import {
   CalendarDays,
   Mail,
   Package,
-  Send,
   UserRound,
 } from "lucide-react";
 
@@ -19,12 +18,15 @@ import {
 
 import Button from "@/components/ui/Button";
 
+import TicketConversation, {
+  type TicketMessage,
+} from "@/components/tickets/TicketConversation";
+
 import {
   createAdminClient,
 } from "@/lib/supabase/admin";
 
 import {
-  adminReplyToTicket,
   updateTicketStatus,
 } from "../actions";
 
@@ -89,19 +91,6 @@ function formatDate(
     return "—";
   }
 
-  const date =
-    new Date(
-      value
-    );
-
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
-    return "—";
-  }
-
   return new Intl.DateTimeFormat(
     "en-US",
     {
@@ -112,7 +101,9 @@ function formatDate(
         "short",
     }
   ).format(
-    date
+    new Date(
+      value
+    )
   );
 }
 
@@ -121,7 +112,8 @@ export default async function AdminTicketPage({
 }: AdminTicketPageProps) {
   const {
     id,
-  } = await params;
+  } =
+    await params;
 
   const admin =
     createAdminClient();
@@ -145,13 +137,16 @@ export default async function AdminTicketPage({
       created_at,
       updated_at,
       closed_at,
+
       ticket_topics (
         name
       ),
+
       ticket_priorities (
         name,
         slug
       ),
+
       products (
         id,
         name
@@ -185,7 +180,20 @@ export default async function AdminTicketPage({
           user_id,
           message,
           is_admin,
-          created_at
+          created_at,
+
+          ticket_attachments (
+            id,
+            file_name,
+            file_type,
+            file_size
+          ),
+
+          ticket_reactions (
+            id,
+            user_id,
+            emoji
+          )
         `)
         .eq(
           "ticket_id",
@@ -217,19 +225,6 @@ export default async function AdminTicketPage({
       ),
     ]);
 
-  if (
-    repliesResult.error
-  ) {
-    console.error(
-      "Failed to load admin ticket replies:",
-      repliesResult.error
-    );
-  }
-
-  const replies =
-    repliesResult.data ??
-    [];
-
   const profile =
     profileResult.data;
 
@@ -244,11 +239,9 @@ export default async function AdminTicketPage({
     authUser
       ?.user_metadata
       ?.name ||
-    authUser
-      ?.email
-      ?.split(
-        "@"
-      )[0] ||
+    authUser?.email?.split(
+      "@"
+    )[0] ||
     "Customer";
 
   const customerEmail =
@@ -276,9 +269,39 @@ export default async function AdminTicketPage({
       ? ticket.products[0]
       : ticket.products;
 
-  const isClosed =
-    ticket.status ===
-    "closed";
+  const messages:
+    TicketMessage[] =
+    (
+      repliesResult.data ??
+      []
+    ).map(
+      (
+        reply
+      ) => ({
+        id:
+          reply.id,
+
+        user_id:
+          reply.user_id,
+
+        message:
+          reply.message,
+
+        is_admin:
+          reply.is_admin,
+
+        created_at:
+          reply.created_at,
+
+        attachments:
+          reply.ticket_attachments ??
+          [],
+
+        reactions:
+          reply.ticket_reactions ??
+          [],
+      })
+    );
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5 p-4 sm:p-6 lg:p-8">
@@ -394,135 +417,28 @@ export default async function AdminTicketPage({
       </section>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-        {/* Conversation */}
-        <section className="min-w-0 overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--surface)]">
-          <div className="border-b border-[var(--border-light)] px-5 py-4 sm:px-6">
-            <h2 className="text-sm font-semibold text-[var(--foreground)]">
-              Conversation
-            </h2>
+        <TicketConversation
+          ticketId={
+            ticket.id
+          }
+          currentUserId={
+            ""
+          }
+          customerName={
+            customerName
+          }
+          messages={
+            messages
+          }
+          closed={
+            ticket.status ===
+            "closed"
+          }
+          adminView
+        />
 
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Replies between the customer and Embernix.
-            </p>
-          </div>
-
-          <div className="space-y-5 px-4 py-5 sm:px-6 sm:py-6">
-            {replies.length ===
-            0 ? (
-              <div className="py-10 text-center text-sm text-[var(--muted)]">
-                No messages yet.
-              </div>
-            ) : (
-              replies.map(
-                (
-                  reply
-                ) => (
-                  <div
-                    key={
-                      reply.id
-                    }
-                    className={`flex ${
-                      reply.is_admin
-                        ? "justify-end"
-                        : "justify-start"
-                    }`}
-                  >
-                    <div
-                      className={`max-w-[90%] rounded-[18px] px-4 py-3 sm:max-w-[76%] ${
-                        reply.is_admin
-                          ? "bg-[var(--primary)] text-white"
-                          : "border border-[var(--border)] bg-[var(--surface-secondary)] text-[var(--foreground)]"
-                      }`}
-                    >
-                      <div className="mb-2 flex items-center justify-between gap-5">
-                        <p
-                          className={`text-xs font-semibold ${
-                            reply.is_admin
-                              ? "text-white"
-                              : "text-[var(--foreground)]"
-                          }`}
-                        >
-                          {reply.is_admin
-                            ? "Embernix"
-                            : customerName}
-                        </p>
-
-                        <p
-                          className={`text-[10px] ${
-                            reply.is_admin
-                              ? "text-white/70"
-                              : "text-[var(--muted)]"
-                          }`}
-                        >
-                          {formatDate(
-                            reply.created_at
-                          )}
-                        </p>
-                      </div>
-
-                      <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                        {
-                          reply.message
-                        }
-                      </p>
-                    </div>
-                  </div>
-                )
-              )
-            )}
-          </div>
-
-          {isClosed ? (
-            <div className="border-t border-[var(--border-light)] px-5 py-5 text-center text-sm text-[var(--muted)]">
-              This ticket is closed. Change its status to reopen the conversation.
-            </div>
-          ) : (
-            <form
-              action={
-                adminReplyToTicket
-              }
-              className="border-t border-[var(--border-light)] p-4 sm:p-5"
-            >
-              <input
-                type="hidden"
-                name="ticketId"
-                value={
-                  ticket.id
-                }
-              />
-
-              <textarea
-                name="message"
-                required
-                minLength={
-                  1
-                }
-                maxLength={
-                  10000
-                }
-                rows={
-                  5
-                }
-                placeholder="Write a reply to the customer..."
-                className="w-full resize-y rounded-xl border border-[var(--border)] bg-white px-3.5 py-3 text-sm leading-6 text-[var(--foreground)] outline-none placeholder:text-[var(--muted-light)] focus:border-[var(--primary)]"
-              />
-
-              <div className="mt-3 flex justify-end">
-                <Button
-                  type="submit"
-                >
-                  <Send className="h-4 w-4" />
-
-                  Send reply
-                </Button>
-              </div>
-            </form>
-          )}
-        </section>
-
-        {/* Details */}
         <aside className="h-fit rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 xl:sticky xl:top-[96px]">
-          <h2 className="text-sm font-semibold text-[var(--foreground)]">
+          <h2 className="text-sm font-semibold">
             Ticket details
           </h2>
 
@@ -571,13 +487,11 @@ export default async function AdminTicketPage({
                   label="Product"
                 >
                   <div className="flex items-center gap-2">
-                    <Package className="h-4 w-4 shrink-0 text-[var(--muted)]" />
+                    <Package className="h-4 w-4 text-[var(--muted)]" />
 
-                    <span className="min-w-0 break-words">
-                      {
-                        product.name
-                      }
-                    </span>
+                    {
+                      product.name
+                    }
                   </div>
                 </InfoItem>
               </>
