@@ -1,3 +1,7 @@
+import type {
+  ReactNode,
+} from "react";
+
 import Link from "next/link";
 
 import {
@@ -79,8 +83,27 @@ function statusClass(
 }
 
 function formatDate(
-  value: string
+  value:
+    | string
+    | null
 ) {
+  if (!value) {
+    return "—";
+  }
+
+  const date =
+    new Date(
+      value
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "—";
+  }
+
   return new Intl.DateTimeFormat(
     "en-US",
     {
@@ -91,9 +114,7 @@ function formatDate(
         "short",
     }
   ).format(
-    new Date(
-      value
-    )
+    date
   );
 }
 
@@ -102,8 +123,7 @@ export default async function TicketPage({
 }: TicketPageProps) {
   const {
     id,
-  } =
-    await params;
+  } = await params;
 
   const supabase =
     await createClient();
@@ -276,7 +296,7 @@ export default async function TicketPage({
       })
     );
 
-  const name =
+  const customerName =
     user.user_metadata
       ?.full_name ||
     user.user_metadata
@@ -297,7 +317,6 @@ export default async function TicketPage({
         className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)]"
       >
         <ArrowLeft className="h-4 w-4" />
-
         Tickets
       </Link>
 
@@ -393,13 +412,16 @@ export default async function TicketPage({
             user.id
           }
           customerName={
-            name
+            customerName
           }
           messages={
             messages
           }
           closed={
             isClosed
+          }
+          status={
+            ticket.status
           }
         />
 
@@ -473,6 +495,20 @@ export default async function TicketPage({
               ticket.updated_at
             )}
           </InfoItem>
+
+          {ticket.closed_at && (
+            <>
+              <Divider />
+
+              <InfoItem
+                label="Closed"
+              >
+                {formatDate(
+                  ticket.closed_at
+                )}
+              </InfoItem>
+            </>
+          )}
         </aside>
       </div>
     </div>
@@ -491,7 +527,7 @@ function InfoItem({
 }: {
   label: string;
   children:
-    React.ReactNode;
+    ReactNode;
 }) {
   return (
     <div>

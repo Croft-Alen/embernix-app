@@ -8,28 +8,13 @@ import {
   redirect,
 } from "next/navigation";
 
-import Button from "@/components/ui/Button";
+import NewTicketForm from "@/components/tickets/NewTicketForm";
 
 import {
   createClient,
 } from "@/lib/supabase/server";
 
-import {
-  createTicket,
-} from "../actions";
-
-type NewTicketPageProps = {
-  searchParams: Promise<{
-    error?: string;
-  }>;
-};
-
-export default async function NewTicketPage({
-  searchParams,
-}: NewTicketPageProps) {
-  const query =
-    await searchParams;
-
+export default async function NewTicketPage() {
   const supabase =
     await createClient();
 
@@ -49,7 +34,7 @@ export default async function NewTicketPage({
   const [
     topicsResult,
     prioritiesResult,
-    ownershipsResult,
+    productsResult,
   ] =
     await Promise.all([
       supabase
@@ -76,7 +61,7 @@ export default async function NewTicketPage({
           "ticket_priorities"
         )
         .select(
-          "id, name, slug"
+          "id, name"
         )
         .eq(
           "active",
@@ -96,6 +81,7 @@ export default async function NewTicketPage({
         )
         .select(`
           product_id,
+
           products (
             id,
             name
@@ -111,20 +97,51 @@ export default async function NewTicketPage({
         ),
     ]);
 
-  const topics =
-    topicsResult.data ??
-    [];
+  const ownedProducts =
+    (
+      productsResult.data ??
+      []
+    )
+      .map(
+        (
+          ownership
+        ) => {
+          const product =
+            Array.isArray(
+              ownership.products
+            )
+              ? ownership.products[0]
+              : ownership.products;
 
-  const priorities =
-    prioritiesResult.data ??
-    [];
+          if (
+            !product
+          ) {
+            return null;
+          }
 
-  const ownerships =
-    ownershipsResult.data ??
-    [];
+          return {
+            id:
+              product.id,
+
+            name:
+              product.name,
+          };
+        }
+      )
+      .filter(
+        (
+          product
+        ): product is {
+          id: string;
+          name: string;
+        } =>
+          Boolean(
+            product
+          )
+      );
 
   return (
-    <div className="mx-auto w-full max-w-[900px] space-y-5">
+    <div className="mx-auto w-full max-w-[950px] space-y-5">
       <Link
         href="/tickets"
         className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)]"
@@ -140,243 +157,23 @@ export default async function NewTicketPage({
         </h1>
 
         <p className="mt-2 text-[15px] leading-6 text-[var(--muted)]">
-          Tell us what you need help with and provide as much detail as possible.
+          Start a conversation with Embernix.
         </p>
       </section>
 
-      {query.error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {
-            query.error
-          }
-        </div>
-      )}
-
-      <form
-        action={
-          createTicket
+      <NewTicketForm
+        topics={
+          topicsResult.data ??
+          []
         }
-        className="rounded-[22px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7"
-      >
-        <div className="space-y-5">
-          <Field
-            label="Subject"
-            required
-          >
-            <input
-              type="text"
-              name="subject"
-              required
-              minLength={
-                3
-              }
-              maxLength={
-                160
-              }
-              placeholder="What do you need help with?"
-              className="h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3.5 text-sm text-[var(--foreground)] outline-none transition-colors placeholder:text-[var(--muted-light)] focus:border-[var(--primary)]"
-            />
-          </Field>
-
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field
-              label="Topic"
-              required
-            >
-              <select
-                name="topicId"
-                required
-                defaultValue=""
-                className="h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-              >
-                <option
-                  value=""
-                  disabled
-                >
-                  Select topic
-                </option>
-
-                {topics.map(
-                  (
-                    topic
-                  ) => (
-                    <option
-                      key={
-                        topic.id
-                      }
-                      value={
-                        topic.id
-                      }
-                    >
-                      {
-                        topic.name
-                      }
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
-
-            <Field
-              label="Priority"
-              required
-            >
-              <select
-                name="priorityId"
-                required
-                defaultValue=""
-                className="h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-              >
-                <option
-                  value=""
-                  disabled
-                >
-                  Select priority
-                </option>
-
-                {priorities.map(
-                  (
-                    priority
-                  ) => (
-                    <option
-                      key={
-                        priority.id
-                      }
-                      value={
-                        priority.id
-                      }
-                    >
-                      {
-                        priority.name
-                      }
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
-          </div>
-
-          {ownerships.length >
-            0 && (
-            <Field label="Product">
-              <select
-                name="productId"
-                defaultValue=""
-                className="h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-              >
-                <option value="">
-                  No product selected
-                </option>
-
-                {ownerships.map(
-                  (
-                    ownership
-                  ) => {
-                    const product =
-                      Array.isArray(
-                        ownership.products
-                      )
-                        ? ownership.products[0]
-                        : ownership.products;
-
-                    if (
-                      !product
-                    ) {
-                      return null;
-                    }
-
-                    return (
-                      <option
-                        key={
-                          product.id
-                        }
-                        value={
-                          product.id
-                        }
-                      >
-                        {
-                          product.name
-                        }
-                      </option>
-                    );
-                  }
-                )}
-              </select>
-
-              <p className="mt-2 text-xs text-[var(--muted)]">
-                Optional. Choose the product this ticket is about.
-              </p>
-            </Field>
-          )}
-
-          <Field
-            label="Message"
-            required
-          >
-            <textarea
-              name="message"
-              required
-              minLength={
-                10
-              }
-              maxLength={
-                10000
-              }
-              rows={
-                8
-              }
-              placeholder="Describe the issue in detail..."
-              className="w-full resize-y rounded-xl border border-[var(--border)] bg-white px-3.5 py-3 text-sm leading-6 text-[var(--foreground)] outline-none transition-colors placeholder:text-[var(--muted-light)] focus:border-[var(--primary)]"
-            />
-          </Field>
-        </div>
-
-        <div className="mt-7 flex items-center justify-end gap-3 border-t border-[var(--border-light)] pt-5">
-          <Link
-            href="/tickets"
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-[var(--border)] px-4 text-sm font-medium text-[var(--foreground)]"
-          >
-            Cancel
-          </Link>
-
-          <Button
-            type="submit"
-          >
-            Create ticket
-          </Button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  required = false,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children:
-    React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
-        {
-          label
+        priorities={
+          prioritiesResult.data ??
+          []
         }
-
-        {required && (
-          <span className="ml-1 text-red-500">
-            *
-          </span>
-        )}
-      </label>
-
-      {
-        children
-      }
+        products={
+          ownedProducts
+        }
+      />
     </div>
   );
 }

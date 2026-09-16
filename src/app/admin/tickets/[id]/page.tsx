@@ -14,6 +14,7 @@ import {
 
 import {
   notFound,
+  redirect,
 } from "next/navigation";
 
 import Button from "@/components/ui/Button";
@@ -25,6 +26,10 @@ import TicketConversation, {
 import {
   createAdminClient,
 } from "@/lib/supabase/admin";
+
+import {
+  createClient,
+} from "@/lib/supabase/server";
 
 import {
   updateTicketStatus,
@@ -91,6 +96,19 @@ function formatDate(
     return "—";
   }
 
+  const date =
+    new Date(
+      value
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "—";
+  }
+
   return new Intl.DateTimeFormat(
     "en-US",
     {
@@ -101,9 +119,7 @@ function formatDate(
         "short",
     }
   ).format(
-    new Date(
-      value
-    )
+    date
   );
 }
 
@@ -112,11 +128,53 @@ export default async function AdminTicketPage({
 }: AdminTicketPageProps) {
   const {
     id,
+  } = await params;
+
+  const supabase =
+    await createClient();
+
+  const {
+    data: {
+      user:
+        currentAdmin,
+    },
   } =
-    await params;
+    await supabase.auth.getUser();
+
+  if (
+    !currentAdmin
+  ) {
+    redirect(
+      "/login"
+    );
+  }
 
   const admin =
     createAdminClient();
+
+  const {
+    data:
+      adminAccess,
+  } = await admin
+    .from(
+      "admin_users"
+    )
+    .select(
+      "user_id"
+    )
+    .eq(
+      "user_id",
+      currentAdmin.id
+    )
+    .maybeSingle();
+
+  if (
+    !adminAccess
+  ) {
+    redirect(
+      "/dashboard"
+    );
+  }
 
   const {
     data:
@@ -225,6 +283,15 @@ export default async function AdminTicketPage({
       ),
     ]);
 
+  if (
+    repliesResult.error
+  ) {
+    console.error(
+      "Failed to load admin ticket messages:",
+      repliesResult.error
+    );
+  }
+
   const profile =
     profileResult.data;
 
@@ -303,6 +370,10 @@ export default async function AdminTicketPage({
       })
     );
 
+  const isClosed =
+    ticket.status ===
+    "closed";
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-5 p-4 sm:p-6 lg:p-8">
       <Link
@@ -310,7 +381,6 @@ export default async function AdminTicketPage({
         className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)]"
       >
         <ArrowLeft className="h-4 w-4" />
-
         Tickets
       </Link>
 
@@ -422,7 +492,7 @@ export default async function AdminTicketPage({
             ticket.id
           }
           currentUserId={
-            ""
+            currentAdmin.id
           }
           customerName={
             customerName
@@ -431,14 +501,16 @@ export default async function AdminTicketPage({
             messages
           }
           closed={
-            ticket.status ===
-            "closed"
+            isClosed
+          }
+          status={
+            ticket.status
           }
           adminView
         />
 
         <aside className="h-fit rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 xl:sticky xl:top-[96px]">
-          <h2 className="text-sm font-semibold">
+          <h2 className="text-sm font-semibold text-[var(--foreground)]">
             Ticket details
           </h2>
 
@@ -487,11 +559,13 @@ export default async function AdminTicketPage({
                   label="Product"
                 >
                   <div className="flex items-center gap-2">
-                    <Package className="h-4 w-4 text-[var(--muted)]" />
+                    <Package className="h-4 w-4 shrink-0 text-[var(--muted)]" />
 
-                    {
-                      product.name
-                    }
+                    <span>
+                      {
+                        product.name
+                      }
+                    </span>
                   </div>
                 </InfoItem>
               </>
