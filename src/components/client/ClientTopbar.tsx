@@ -15,6 +15,7 @@ import {
   ReceiptText,
   Search,
   ShoppingBag,
+  ShieldCheck,
   UserRound,
 } from "lucide-react";
 
@@ -40,6 +41,7 @@ type ClientTopbarProps = {
   email: string;
   avatarUrl: string | null;
   initials: string;
+  isAdmin: boolean;
 };
 
 function DiscordIcon({
@@ -51,7 +53,9 @@ function DiscordIcon({
     <svg
       viewBox="0 0 24 24"
       aria-hidden="true"
-      className={className}
+      className={
+        className
+      }
       fill="currentColor"
     >
       <path d="M19.54 5.34A16.87 16.87 0 0 0 15.34 4l-.51 1.05a15.58 15.58 0 0 0-5.66 0L8.66 4a16.94 16.94 0 0 0-4.2 1.34C1.8 9.24 1.08 13.05 1.44 16.8a17.21 17.21 0 0 0 5.15 2.62l1.24-1.69a10.9 10.9 0 0 1-1.95-.93c.16-.12.32-.24.47-.37a12.1 12.1 0 0 0 11.3 0c.15.13.31.25.47.37-.62.37-1.28.68-1.96.93l1.24 1.69a17.17 17.17 0 0 0 5.15-2.62c.43-4.35-.74-8.13-3.01-11.46ZM8.47 14.55c-1.03 0-1.87-.95-1.87-2.12s.82-2.12 1.87-2.12 1.89.96 1.87 2.12c0 1.17-.82 2.12-1.87 2.12Zm7.06 0c-1.03 0-1.87-.95-1.87-2.12s.82-2.12 1.87-2.12 1.89.96 1.87 2.12c0 1.17-.82 2.12-1.87 2.12Z" />
@@ -136,6 +140,7 @@ export function ClientTopbar({
   email,
   avatarUrl,
   initials,
+  isAdmin,
 }: ClientTopbarProps) {
   const router =
     useRouter();
@@ -165,7 +170,7 @@ export function ClientTopbar({
       null
     );
 
-  const searchRef =
+  const desktopSearchRef =
     useRef<HTMLDivElement>(
       null
     );
@@ -220,8 +225,8 @@ export function ClientTopbar({
       }
 
       if (
-        searchRef.current &&
-        !searchRef.current.contains(
+        desktopSearchRef.current &&
+        !desktopSearchRef.current.contains(
           target
         )
       ) {
@@ -279,9 +284,8 @@ export function ClientTopbar({
 
   return (
     <>
-      <header className="sticky top-4 z-30">
-        <div className="flex h-[68px] items-center gap-3 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] px-3 shadow-[0_8px_30px_rgba(15,23,42,0.06)] sm:px-4">
-          {/* Mobile navigation */}
+      <header className="sticky top-3 z-30 sm:top-4">
+        <div className="flex h-[66px] items-center gap-2 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] px-2.5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] sm:gap-3 sm:px-4">
           <button
             type="button"
             onClick={() =>
@@ -295,7 +299,6 @@ export function ClientTopbar({
             <Menu className="h-5 w-5" />
           </button>
 
-          {/* Brand */}
           <Link
             href="/dashboard"
             className="flex shrink-0 items-center gap-2.5"
@@ -317,12 +320,11 @@ export function ClientTopbar({
             </span>
           </Link>
 
-          {/* Desktop search */}
           <div
             ref={
-              searchRef
+              desktopSearchRef
             }
-            className="relative mx-auto hidden w-full max-w-[520px] md:block"
+            className="relative mx-auto hidden w-full max-w-[540px] md:block"
           >
             <form
               onSubmit={
@@ -353,7 +355,7 @@ export function ClientTopbar({
                     true
                   );
                 }}
-                placeholder="Search..."
+                placeholder="Search Embernix..."
                 aria-label="Search Embernix"
                 className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-secondary)] pl-10 pr-4 text-sm text-[var(--foreground)] outline-none transition-colors placeholder:text-[var(--muted-light)] focus:border-[var(--primary)] focus:bg-white"
               />
@@ -416,9 +418,7 @@ export function ClientTopbar({
               )}
           </div>
 
-          {/* Actions */}
-          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
-            {/* Mobile search */}
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
             <button
               type="button"
               aria-label="Search"
@@ -435,7 +435,6 @@ export function ClientTopbar({
               <Search className="h-[19px] w-[19px]" />
             </button>
 
-            {/* Discord */}
             {discordUrl ? (
               <a
                 href={
@@ -445,7 +444,7 @@ export function ClientTopbar({
                 rel="noreferrer"
                 aria-label="Join Embernix Discord"
                 title="Discord"
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
+                className="hidden h-10 w-10 items-center justify-center rounded-xl text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] xs:flex sm:flex"
               >
                 <DiscordIcon />
               </a>
@@ -455,13 +454,12 @@ export function ClientTopbar({
                 disabled
                 aria-label="Embernix Discord"
                 title="Discord"
-                className="flex h-10 w-10 cursor-default items-center justify-center rounded-xl text-[var(--muted-light)]"
+                className="hidden h-10 w-10 cursor-default items-center justify-center rounded-xl text-[var(--muted-light)] sm:flex"
               >
                 <DiscordIcon />
               </button>
             )}
 
-            {/* Notifications */}
             <button
               type="button"
               aria-label="Notifications"
@@ -471,7 +469,6 @@ export function ClientTopbar({
               <Bell className="h-[19px] w-[19px]" />
             </button>
 
-            {/* Account */}
             <div
               ref={
                 profileRef
@@ -488,7 +485,7 @@ export function ClientTopbar({
                       !current
                   )
                 }
-                className="flex h-11 items-center gap-2 rounded-xl px-1.5 transition-colors hover:bg-[var(--surface-hover)]"
+                className="flex h-11 items-center gap-1.5 rounded-xl px-1 transition-colors hover:bg-[var(--surface-hover)] sm:px-1.5"
                 aria-label="Open account menu"
                 aria-expanded={
                   profileOpen
@@ -523,8 +520,8 @@ export function ClientTopbar({
               </button>
 
               {profileOpen && (
-                <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[270px] overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-[0_16px_45px_rgba(15,23,42,0.12)]">
-                  <div className="border-b border-[var(--border-light)] p-4">
+                <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[290px] max-w-[calc(100vw-24px)] overflow-hidden rounded-[18px] border border-[var(--border)] bg-white shadow-[0_18px_55px_rgba(15,23,42,0.14)]">
+                  <div className="p-4">
                     <div className="flex items-center gap-3">
                       {avatarUrl ? (
                         <img
@@ -561,21 +558,80 @@ export function ClientTopbar({
                     </div>
                   </div>
 
-                  <div className="p-2">
-                    <Link
+                  <div className="border-t border-[var(--border-light)] p-2">
+                    <DropdownLink
                       href="/account"
+                      icon={
+                        UserRound
+                      }
+                      label="Account"
                       onClick={() =>
                         setProfileOpen(
                           false
                         )
                       }
-                      className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--surface-hover)]"
-                    >
-                      <UserRound className="h-4 w-4 text-[var(--muted)]" />
+                    />
 
-                      Account
-                    </Link>
+                    <DropdownLink
+                      href="/products"
+                      icon={
+                        Package
+                      }
+                      label="Products"
+                      onClick={() =>
+                        setProfileOpen(
+                          false
+                        )
+                      }
+                    />
 
+                    <DropdownLink
+                      href="/invoices"
+                      icon={
+                        ReceiptText
+                      }
+                      label="Invoices"
+                      onClick={() =>
+                        setProfileOpen(
+                          false
+                        )
+                      }
+                    />
+
+                    <DropdownLink
+                      href="/tickets"
+                      icon={
+                        LifeBuoy
+                      }
+                      label="Support"
+                      onClick={() =>
+                        setProfileOpen(
+                          false
+                        )
+                      }
+                    />
+
+                    {isAdmin && (
+                      <>
+                        <div className="my-2 h-px bg-[var(--border-light)]" />
+
+                        <DropdownLink
+                          href="/admin"
+                          icon={
+                            ShieldCheck
+                          }
+                          label="Admin"
+                          onClick={() =>
+                            setProfileOpen(
+                              false
+                            )
+                          }
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  <div className="border-t border-[var(--border-light)] p-2">
                     <form
                       action={
                         signOut
@@ -583,9 +639,9 @@ export function ClientTopbar({
                     >
                       <button
                         type="submit"
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                        className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                       >
-                        <LogOut className="h-4 w-4" />
+                        <LogOut className="h-[17px] w-[17px]" />
 
                         Sign out
                       </button>
@@ -597,39 +653,37 @@ export function ClientTopbar({
           </div>
         </div>
 
-        {/* Mobile search */}
         {searchOpen && (
-          <div
-            className="relative mt-2 md:hidden"
-          >
-            <form
-              onSubmit={
-                handleSearchSubmit
-              }
-              className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[0_8px_30px_rgba(15,23,42,0.06)]"
-            >
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-light)]" />
+          <div className="relative mt-2 md:hidden">
+            <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[0_10px_35px_rgba(15,23,42,0.08)]">
+              <form
+                onSubmit={
+                  handleSearchSubmit
+                }
+              >
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-light)]" />
 
-                <input
-                  type="search"
-                  autoFocus
-                  value={
-                    searchQuery
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setSearchQuery(
-                      event.target
-                        .value
-                    )
-                  }
-                  placeholder="Search..."
-                  aria-label="Search Embernix"
-                  className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-secondary)] pl-10 pr-4 text-sm outline-none focus:border-[var(--primary)] focus:bg-white"
-                />
-              </div>
+                  <input
+                    type="search"
+                    autoFocus
+                    value={
+                      searchQuery
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setSearchQuery(
+                        event.target
+                          .value
+                      )
+                    }
+                    placeholder="Search Embernix..."
+                    aria-label="Search Embernix"
+                    className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-secondary)] pl-10 pr-4 text-sm outline-none focus:border-[var(--primary)] focus:bg-white"
+                  />
+                </div>
+              </form>
 
               {normalizedQuery && (
                 <div className="mt-2 space-y-1">
@@ -657,7 +711,7 @@ export function ClientTopbar({
                           >
                             <Icon className="h-4 w-4 shrink-0 text-[var(--muted)]" />
 
-                            <span className="text-sm font-medium">
+                            <span className="text-sm font-medium text-[var(--foreground)]">
                               {
                                 item.label
                               }
@@ -673,7 +727,7 @@ export function ClientTopbar({
                   )}
                 </div>
               )}
-            </form>
+            </div>
           </div>
         )}
       </header>
@@ -691,6 +745,38 @@ export function ClientTopbar({
         />
       </div>
     </>
+  );
+}
+
+function DropdownLink({
+  href,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  href: string;
+  icon: typeof UserRound;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Link
+      href={
+        href
+      }
+      onClick={
+        onClick
+      }
+      className="flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--surface-hover)]"
+    >
+      <Icon className="h-[17px] w-[17px] shrink-0 text-[var(--muted)]" />
+
+      <span>
+        {
+          label
+        }
+      </span>
+    </Link>
   );
 }
 

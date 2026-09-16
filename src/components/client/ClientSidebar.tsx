@@ -256,15 +256,18 @@ export default function ClientSidebar({
       <aside
         className={`
           fixed bottom-4 left-4 top-4 z-50
-          flex w-[248px] flex-col
+          flex w-[268px] flex-col
           rounded-[22px]
           border border-[var(--border)]
           bg-[var(--surface)]
           p-3
-          shadow-[0_12px_40px_rgba(15,23,42,0.08)]
+          shadow-[0_16px_45px_rgba(15,23,42,0.10)]
           transition-transform duration-200
-          lg:static lg:z-auto lg:h-[calc(100vh-108px)] lg:w-[216px]
-          lg:translate-x-0 lg:shadow-none
+          lg:static
+          lg:h-full
+          lg:w-full
+          lg:translate-x-0
+          lg:shadow-none
           ${
             mobileOpen
               ? "translate-x-0"
@@ -274,7 +277,7 @@ export default function ClientSidebar({
       >
         <div className="flex items-center justify-between px-2 pb-3 lg:hidden">
           <p className="text-sm font-semibold text-[var(--foreground)]">
-            Navigation
+            Menu
           </p>
 
           <button
@@ -315,8 +318,10 @@ export default function ClientSidebar({
                       onClose
                     }
                     className={`
-                      flex h-11 items-center gap-3 rounded-xl px-3
-                      text-sm font-medium transition-colors
+                      flex h-11 items-center gap-3
+                      rounded-xl px-3.5
+                      text-sm font-medium
+                      transition-colors
                       ${
                         active
                           ? "bg-[var(--primary-soft)] text-[var(--primary)]"
