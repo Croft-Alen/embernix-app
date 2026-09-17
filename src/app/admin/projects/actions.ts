@@ -5,6 +5,10 @@ import {
 } from "next/cache";
 
 import {
+  createNotification,
+} from "@/lib/notifications/create-notification";
+
+import {
   createAdminClient,
 } from "@/lib/supabase/admin";
 
@@ -100,15 +104,31 @@ export async function updateProject(
       ) ?? ""
     ).trim();
 
+  /*
+   * Load the existing project first.
+   *
+   * We need:
+   * - previous status
+   * - customer ID
+   * - project title
+   * - existing completed_at
+   *
+   * This also prevents duplicate notifications
+   * when the status did not actually change.
+   */
   const {
     data:
       currentProject,
     error:
       currentProjectError,
   } = await admin
-    .from("projects")
+    .from(
+      "projects"
+    )
     .select(`
       id,
+      user_id,
+      title,
       status,
       completed_at
     `)
@@ -132,6 +152,13 @@ export async function updateProject(
     );
   }
 
+  const statusChanged =
+    currentProject.status !==
+    status;
+
+  const now =
+    new Date().toISOString();
+
   let completedAt =
     currentProject.completed_at;
 
@@ -142,7 +169,7 @@ export async function updateProject(
       "completed"
   ) {
     completedAt =
-      new Date().toISOString();
+      now;
   }
 
   if (
@@ -156,7 +183,9 @@ export async function updateProject(
   const {
     error,
   } = await admin
-    .from("projects")
+    .from(
+      "projects"
+    )
     .update({
       status,
 
@@ -168,14 +197,16 @@ export async function updateProject(
         completedAt,
 
       updated_at:
-        new Date().toISOString(),
+        now,
     })
     .eq(
       "id",
       projectId
     );
 
-  if (error) {
+  if (
+    error
+  ) {
     console.error(
       "Failed updating project:",
       error
@@ -184,6 +215,128 @@ export async function updateProject(
     throw new Error(
       "Unable to update project."
     );
+  }
+
+  /*
+   * Notifications only happen when the
+   * project's status genuinely changed.
+   *
+   * We intentionally DO NOT notify for:
+   *
+   * awaiting_requirements
+   *
+   * because that is the normal initial stage.
+   */
+  if (
+    statusChanged
+  ) {
+    if (
+      status ===
+      "in_progress"
+    ) {
+      await createNotification({
+        userId:
+          currentProject.user_id,
+
+        type:
+          "project_in_progress",
+
+        title:
+          "Project in progress",
+
+        message:
+          `${currentProject.title} is now in progress.`,
+
+        href:
+          `/projects/${currentProject.id}`,
+
+        metadata: {
+          projectId:
+            currentProject.id,
+
+          previousStatus:
+            currentProject.status,
+
+          status:
+            "in_progress",
+        },
+
+        dedupeKey:
+          `project-status:${currentProject.id}:in_progress:${now}`,
+      });
+    }
+
+    if (
+      status ===
+      "completed"
+    ) {
+      await createNotification({
+        userId:
+          currentProject.user_id,
+
+        type:
+          "project_completed",
+
+        title:
+          "Project completed",
+
+        message:
+          `${currentProject.title} has been completed.`,
+
+        href:
+          `/projects/${currentProject.id}`,
+
+        metadata: {
+          projectId:
+            currentProject.id,
+
+          previousStatus:
+            currentProject.status,
+
+          status:
+            "completed",
+        },
+
+        dedupeKey:
+          `project-status:${currentProject.id}:completed:${now}`,
+      });
+    }
+
+    if (
+      status ===
+      "cancelled"
+    ) {
+      await createNotification({
+        userId:
+          currentProject.user_id,
+
+        type:
+          "project_cancelled",
+
+        title:
+          "Project cancelled",
+
+        message:
+          `${currentProject.title} has been cancelled.`,
+
+        href:
+          `/projects/${currentProject.id}`,
+
+        metadata: {
+          projectId:
+            currentProject.id,
+
+          previousStatus:
+            currentProject.status,
+
+          status:
+            "cancelled",
+        },
+
+        dedupeKey:
+          `project-status:${currentProject.id}:cancelled:${now}`,
+      });
+    }
   }
 
   revalidatePath(
@@ -200,5 +353,13 @@ export async function updateProject(
 
   revalidatePath(
     "/projects"
+  );
+
+  revalidatePath(
+    "/dashboard"
+  );
+
+  revalidatePath(
+    "/notifications"
   );
 }

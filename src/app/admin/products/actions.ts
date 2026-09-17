@@ -19,6 +19,10 @@ import {
 } from "@/lib/supabase/admin";
 
 import {
+  createNotification,
+} from "@/lib/notifications/create-notification";
+
+import {
   syncProductToPaddle,
 } from "@/lib/paddle/catalog";
 
@@ -1678,6 +1682,63 @@ export async function updateProduct(
   const admin =
     createAdminClient();
 
+  /*
+   * Load the existing product before saving.
+   *
+   * Product-update notifications only fire when
+   * the CURRENT VERSION actually changes.
+   * Normal edits to price, copy, images, etc.
+   * must not notify customers.
+   */
+  const {
+    data:
+      existingProduct,
+    error:
+      existingProductError,
+  } = await admin
+    .from("products")
+    .select(`
+      id,
+      name,
+      version
+    `)
+    .eq(
+      "id",
+      productId
+    )
+    .maybeSingle();
+
+  if (
+    existingProductError ||
+    !existingProduct
+  ) {
+    redirectError(
+      errorPath,
+      "Unable to load the existing product."
+    );
+  }
+
+  const previousVersion =
+    existingProduct.version
+      ? String(
+          existingProduct.version
+        ).trim()
+      : null;
+
+  const nextVersion =
+    currentVersion
+      ? String(
+          currentVersion
+        ).trim()
+      : null;
+
+  const versionChanged =
+    Boolean(
+      nextVersion &&
+      previousVersion !==
+        nextVersion
+    );
+
   const {
     error: updateError,
   } = await admin
@@ -1780,6 +1841,106 @@ export async function updateProduct(
   }
 
   /*
+   * Notify ACTIVE owners only when the current
+   * product version genuinely changed.
+   *
+   * Product creation is handled by createProduct(),
+   * so creating a brand-new product never triggers
+   * this block.
+   *
+   * The dedupe key is version-based, meaning saving
+   * the same release again or switching back to a
+   * previously announced version will not spam the
+   * same customer.
+   */
+  if (
+    versionChanged &&
+    nextVersion
+  ) {
+    const {
+      data:
+        ownerships,
+      error:
+        ownershipError,
+    } = await admin
+      .from(
+        "customer_products"
+      )
+      .select(
+        "user_id"
+      )
+      .eq(
+        "product_id",
+        productId
+      )
+      .eq(
+        "status",
+        "active"
+      );
+
+    if (
+      ownershipError
+    ) {
+      console.error(
+        "Failed loading product owners for update notification:",
+        ownershipError
+      );
+    } else {
+      const ownerIds = [
+        ...new Set(
+          (
+            ownerships ??
+            []
+          )
+            .map(
+              (ownership) =>
+                ownership.user_id
+            )
+            .filter(
+              (
+                userId
+              ): userId is string =>
+                Boolean(
+                  userId
+                )
+            )
+        ),
+      ];
+
+      for (
+        const userId
+        of ownerIds
+      ) {
+        await createNotification({
+          userId,
+
+          type:
+            "product_update",
+
+          title:
+            "Product update available",
+
+          message:
+            `${product.name} has been updated to v${nextVersion}.`,
+
+          href:
+            `/products/${productId}`,
+
+          metadata: {
+            productId,
+            previousVersion,
+            version:
+              nextVersion,
+          },
+
+          dedupeKey:
+            `product-update:${productId}:${nextVersion}`,
+        });
+      }
+    }
+  }
+
+  /*
    * Sync metadata/price into Paddle.
    *
    * A Paddle failure should not destroy
@@ -1806,6 +1967,10 @@ export async function updateProduct(
 
   revalidatePath(
     "/products"
+  );
+
+  revalidatePath(
+    "/notifications"
   );
 
   redirect(
