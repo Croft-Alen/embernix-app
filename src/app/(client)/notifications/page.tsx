@@ -1,10 +1,5 @@
 import {
   Bell,
-  CircleAlert,
-  FolderKanban,
-  MessageCircle,
-  Package,
-  ReceiptText,
 } from "lucide-react";
 
 import {
@@ -19,7 +14,12 @@ import NotificationsList from "@/components/notifications/NotificationsList";
 
 function iconType(
   type: string
-) {
+):
+  | "ticket"
+  | "billing"
+  | "project"
+  | "product"
+  | "general" {
   switch (
     type
   ) {
@@ -123,7 +123,9 @@ export default async function NotificationsPage() {
     <div className="mx-auto w-full max-w-[1100px] space-y-5">
       <section className="rounded-[22px] border border-[var(--border)] bg-[var(--surface)] px-5 py-6 sm:px-7 sm:py-7">
         <div className="flex items-center gap-3">
-          <Bell className="h-5 w-5 text-[var(--primary)]" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <Bell className="h-5 w-5" />
+          </div>
 
           <div>
             <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-[var(--foreground)] sm:text-[27px]">
@@ -131,7 +133,9 @@ export default async function NotificationsPage() {
             </h1>
 
             <p className="mt-1.5 text-sm leading-6 text-[var(--muted)]">
-              Important updates about your tickets, projects, billing and products.
+              Important updates about your
+              tickets, projects, billing, and
+              products.
             </p>
           </div>
         </div>

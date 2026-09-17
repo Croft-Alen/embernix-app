@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import {
+  Bell,
   CheckCheck,
   CircleAlert,
   FolderKanban,
@@ -15,79 +16,95 @@ import {
   useState,
 } from "react";
 
-type Notification = {
+type NotificationCategory =
+  | "ticket"
+  | "billing"
+  | "project"
+  | "product"
+  | "general";
+
+type NotificationItem = {
   id: string;
-
   type: string;
-
-  category: string;
-
   title: string;
-
   message: string;
-
-  href:
-    | string
-    | null;
-
-  read_at:
-    | string
-    | null;
-
+  href: string | null;
+  read_at: string | null;
   created_at: string;
+  category: NotificationCategory;
 };
 
-type Props = {
+type NotificationsListProps = {
   notifications:
-    Notification[];
+    NotificationItem[];
 };
 
 function formatDate(
   value: string
 ) {
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
   return new Intl.DateTimeFormat(
     "en-US",
     {
-      dateStyle:
-        "medium",
-
-      timeStyle:
-        "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
     }
-  ).format(
-    new Date(
-      value
-    )
-  );
+  ).format(date);
 }
 
-function getIcon(
-  category: string
-) {
+function CategoryIcon({
+  category,
+}: {
+  category:
+    NotificationCategory;
+}) {
   switch (
     category
   ) {
     case "ticket":
-      return MessageCircle;
+      return (
+        <MessageCircle className="h-[18px] w-[18px]" />
+      );
 
     case "billing":
-      return ReceiptText;
+      return (
+        <ReceiptText className="h-[18px] w-[18px]" />
+      );
 
     case "project":
-      return FolderKanban;
+      return (
+        <FolderKanban className="h-[18px] w-[18px]" />
+      );
 
     case "product":
-      return Package;
+      return (
+        <Package className="h-[18px] w-[18px]" />
+      );
 
     default:
-      return CircleAlert;
+      return (
+        <CircleAlert className="h-[18px] w-[18px]" />
+      );
   }
 }
 
 export default function NotificationsList({
   notifications:
     initialNotifications,
-}: Props) {
+}: NotificationsListProps) {
   const [
     notifications,
     setNotifications,
@@ -95,15 +112,15 @@ export default function NotificationsList({
     initialNotifications
   );
 
-  const unread =
+  const unreadCount =
     notifications.filter(
       (
-        item
+        notification
       ) =>
-        !item.read_at
+        !notification.read_at
     ).length;
 
-  async function markRead(
+  async function markOneRead(
     id: string
   ) {
     const now =
@@ -115,41 +132,67 @@ export default function NotificationsList({
       ) =>
         current.map(
           (
-            item
+            notification
           ) =>
-            item.id ===
-            id
+            notification.id ===
+            id &&
+            !notification.read_at
               ? {
-                  ...item,
-
+                  ...notification,
                   read_at:
-                    item.read_at ??
                     now,
                 }
-              : item
+              : notification
         )
     );
 
-    await fetch(
-      "/api/notifications",
-      {
-        method:
-          "PATCH",
+    try {
+      const response =
+        await fetch(
+          "/api/notifications",
+          {
+            method:
+              "PATCH",
 
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
 
-        body:
-          JSON.stringify({
-            id,
-          }),
+            body:
+              JSON.stringify({
+                id,
+              }),
+          }
+        );
+
+      if (
+        !response.ok
+      ) {
+        throw new Error(
+          "Unable to mark notification as read."
+        );
       }
-    );
+    } catch (error) {
+      console.error(
+        "Failed marking notification read:",
+        error
+      );
+
+      setNotifications(
+        initialNotifications
+      );
+    }
   }
 
-  async function markAll() {
+  async function markAllRead() {
+    if (
+      unreadCount ===
+      0
+    ) {
+      return;
+    }
+
     const now =
       new Date().toISOString();
 
@@ -159,35 +202,54 @@ export default function NotificationsList({
       ) =>
         current.map(
           (
-            item
+            notification
           ) => ({
-            ...item,
+            ...notification,
 
             read_at:
-              item.read_at ??
+              notification.read_at ??
               now,
           })
         )
     );
 
-    await fetch(
-      "/api/notifications",
-      {
-        method:
-          "PATCH",
+    try {
+      const response =
+        await fetch(
+          "/api/notifications",
+          {
+            method:
+              "PATCH",
 
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
 
-        body:
-          JSON.stringify({
-            all:
-              true,
-          }),
+            body:
+              JSON.stringify({
+                all: true,
+              }),
+          }
+        );
+
+      if (
+        !response.ok
+      ) {
+        throw new Error(
+          "Unable to mark notifications as read."
+        );
       }
-    );
+    } catch (error) {
+      console.error(
+        "Failed marking all notifications read:",
+        error
+      );
+
+      setNotifications(
+        initialNotifications
+      );
+    }
   }
 
   if (
@@ -195,46 +257,41 @@ export default function NotificationsList({
     0
   ) {
     return (
-      <section className="flex min-h-[330px] items-center justify-center rounded-[22px] border border-[var(--border)] bg-[var(--surface)] p-5">
-        <div className="text-center">
-          <CircleAlert className="mx-auto h-6 w-6 text-[var(--muted-light)]" />
+      <section className="rounded-[22px] border border-[var(--border)] bg-[var(--surface)] px-6 py-14 text-center">
+        <Bell className="mx-auto h-7 w-7 text-[var(--muted-light)]" />
 
-          <h2 className="mt-4 text-sm font-semibold">
-            No notifications
-          </h2>
+        <h2 className="mt-4 text-sm font-semibold text-[var(--foreground)]">
+          No notifications
+        </h2>
 
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            Important account updates will appear here.
-          </p>
-        </div>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Important updates will appear here.
+        </p>
       </section>
     );
   }
 
   return (
     <section className="overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--surface)]">
-      <div className="flex items-center justify-between gap-4 border-b border-[var(--border-light)] px-5 py-4">
+      <div className="flex items-center justify-between gap-4 border-b border-[var(--border-light)] px-5 py-4 sm:px-6">
         <div>
           <p className="text-sm font-semibold text-[var(--foreground)]">
-            Recent notifications
+            All notifications
           </p>
 
           <p className="mt-1 text-xs text-[var(--muted)]">
-            {unread >
-            0
-              ? `${unread} unread`
-              : "You're all caught up"}
+            {unreadCount} unread
           </p>
         </div>
 
-        {unread >
+        {unreadCount >
           0 && (
           <button
             type="button"
-            onClick={() =>
-              void markAll()
+            onClick={
+              markAllRead
             }
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] px-3 text-xs font-semibold text-[var(--foreground)]"
+            className="inline-flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-medium text-[var(--primary)] transition-colors hover:bg-[var(--primary-soft)]"
           >
             <CheckCheck className="h-4 w-4" />
 
@@ -248,49 +305,59 @@ export default function NotificationsList({
           (
             notification
           ) => {
-            const Icon =
-              getIcon(
-                notification.category
-              );
-
-            const body = (
-              <div
-                className={`flex gap-4 px-5 py-5 sm:px-6 ${
-                  !notification.read_at
-                    ? "bg-[var(--primary-soft)]/25"
-                    : ""
-                }`}
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-secondary)] text-[var(--primary)]">
-                  <Icon className="h-[18px] w-[18px]" />
+            const content = (
+              <>
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                    notification.read_at
+                      ? "bg-[var(--surface-secondary)] text-[var(--muted)]"
+                      : "bg-[var(--primary-soft)] text-[var(--primary)]"
+                  }`}
+                >
+                  <CategoryIcon
+                    category={
+                      notification.category
+                    }
+                  />
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-start gap-3">
-                    <h2 className="flex-1 text-sm font-semibold text-[var(--foreground)]">
-                      {
-                        notification.title
-                      }
-                    </h2>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p
+                        className={`text-sm text-[var(--foreground)] ${
+                          notification.read_at
+                            ? "font-medium"
+                            : "font-semibold"
+                        }`}
+                      >
+                        {
+                          notification.title
+                        }
+                      </p>
+
+                      <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+                        {
+                          notification.message
+                        }
+                      </p>
+
+                      <p className="mt-2 text-xs text-[var(--muted-light)]">
+                        {formatDate(
+                          notification.created_at
+                        )}
+                      </p>
+                    </div>
 
                     {!notification.read_at && (
-                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[var(--primary)]" />
+                      <span
+                        className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--primary)]"
+                        aria-label="Unread"
+                      />
                     )}
                   </div>
-
-                  <p className="mt-1.5 text-sm leading-6 text-[var(--muted)]">
-                    {
-                      notification.message
-                    }
-                  </p>
-
-                  <p className="mt-2 text-[11px] text-[var(--muted-light)]">
-                    {formatDate(
-                      notification.created_at
-                    )}
-                  </p>
                 </div>
-              </div>
+              </>
             );
 
             if (
@@ -305,14 +372,14 @@ export default function NotificationsList({
                     notification.href
                   }
                   onClick={() =>
-                    void markRead(
+                    void markOneRead(
                       notification.id
                     )
                   }
-                  className="block"
+                  className="flex gap-4 px-5 py-5 transition-colors hover:bg-[var(--surface-hover)] sm:px-6"
                 >
                   {
-                    body
+                    content
                   }
                 </Link>
               );
@@ -325,14 +392,14 @@ export default function NotificationsList({
                 }
                 type="button"
                 onClick={() =>
-                  void markRead(
+                  void markOneRead(
                     notification.id
                   )
                 }
-                className="block w-full text-left"
+                className="flex w-full gap-4 px-5 py-5 text-left transition-colors hover:bg-[var(--surface-hover)] sm:px-6"
               >
                 {
-                  body
+                  content
                 }
               </button>
             );

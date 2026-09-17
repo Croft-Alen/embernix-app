@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   Package,
   ReceiptText,
-  ShoppingBag,
   Ticket,
   X,
 } from "lucide-react";
@@ -42,12 +41,6 @@ const baseNavigation = [
     label: "Products",
     href: "/products",
     icon: Package,
-  },
-
-  {
-    label: "Orders",
-    href: "/orders",
-    icon: ShoppingBag,
   },
 
   {
@@ -186,10 +179,9 @@ export default function ClientSidebar({
   const navigation =
     useMemo(
       () => {
-        const items =
-          [
-            ...baseNavigation,
-          ];
+        const items = [
+          ...baseNavigation,
+        ];
 
         if (
           projectsLoaded &&
