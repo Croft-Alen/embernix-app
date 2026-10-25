@@ -87,7 +87,7 @@ export default async function EditCouponPage({
       active,
       expires_at,
       usage_limit,
-      paddle_discount_id
+      creem_discount_id
     `)
     .eq(
       "id",
@@ -189,8 +189,8 @@ export default async function EditCouponPage({
           usage_limit:
             coupon.usage_limit,
 
-          paddle_discount_id:
-            coupon.paddle_discount_id,
+          creem_discount_id:
+            coupon.creem_discount_id,
         }}
       />
     </div>

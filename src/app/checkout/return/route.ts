@@ -1,78 +1,25 @@
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
 
-export async function GET(
-  request: NextRequest
-) {
-  const invoiceId =
-    request.cookies.get(
-      "embernix_invoice_checkout"
-    )?.value;
+import { NextRequest, NextResponse } from "next/server";
 
-  if (invoiceId) {
-    const invoiceUrl =
-      new URL(
-        `/invoices/${invoiceId}`,
-        request.url
-      );
+export const runtime = "nodejs";
 
-    invoiceUrl.searchParams.set(
-      "payment",
-      "processing"
-    );
+export async function GET(request: NextRequest) {
+  const orderNumber = request.nextUrl.searchParams.get(
+    "order"
+  );
 
-    const response =
-      NextResponse.redirect(
-        invoiceUrl
-      );
+  const destination = new URL(
+    "/products",
+    request.nextUrl.origin
+  );
 
-    response.cookies.delete(
-      "embernix_invoice_checkout"
-    );
-
-    return response;
+  if (
+    orderNumber &&
+    /^EMB-\d{8}-[A-Z0-9]{8,12}$/.test(orderNumber)
+  ) {
+    destination.pathname = "/checkout/success";
+    destination.searchParams.set("order", orderNumber);
   }
 
-  const orderNumber =
-    request.cookies.get(
-      "embernix_checkout_order"
-    )?.value;
-
-  if (!orderNumber) {
-    return NextResponse.redirect(
-      new URL(
-        "/products",
-        request.url
-      )
-    );
-  }
-
-  const successUrl =
-    new URL(
-      "/checkout/success",
-      request.url
-    );
-
-  successUrl.searchParams.set(
-    "order",
-    orderNumber
-  );
-
-  successUrl.searchParams.set(
-    "payment",
-    "processing"
-  );
-
-  const response =
-    NextResponse.redirect(
-      successUrl
-    );
-
-  response.cookies.delete(
-    "embernix_checkout_order"
-  );
-
-  return response;
+  return NextResponse.redirect(destination, 303);
 }

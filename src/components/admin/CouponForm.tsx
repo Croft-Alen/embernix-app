@@ -45,7 +45,7 @@ export type CouponFormData = {
     | number
     | null;
 
-  paddle_discount_id:
+  creem_discount_id:
     | string
     | null;
 };
@@ -89,9 +89,9 @@ export default function CouponForm({
     coupon.discount_type
   );
 
-  const paddleConnected =
+  const creemConnected =
     Boolean(
-      coupon.paddle_discount_id
+      coupon.creem_discount_id
     );
 
   return (
@@ -200,7 +200,7 @@ export default function CouponForm({
             />
 
             <p className="mt-2 text-xs text-[var(--muted)]">
-              Internal description used in Embernix and Paddle.
+              Internal description used in Embernix and Creem.
             </p>
           </div>
         </div>
@@ -393,39 +393,38 @@ export default function CouponForm({
         </div>
       </section>
 
-      {/* PADDLE */}
+      {/* CREEM DISCOUNT MAPPING */}
       <section className={sectionClass}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="font-semibold">
-              Paddle
-            </h2>
-
+            <h2 className="font-semibold">Creem discount</h2>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Paddle discount synchronization is managed automatically.
+              Create the matching discount in Creem and enter its ID.
+              Match the code, discount amount, currency, expiration and usage limit.
             </p>
           </div>
-
-          {paddleConnected ? (
-            <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
-              Connected
-            </span>
-          ) : (
-            <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-              Not connected
-            </span>
-          )}
+          <span className={`rounded-full px-3 py-1 text-xs font-medium ${creemConnected ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}>
+            {creemConnected ? "Mapped" : "Not mapped"}
+          </span>
         </div>
-
         <div className="mt-5">
-          <p className="text-xs font-medium text-[var(--muted)]">
-            Paddle Discount ID
+          <label htmlFor="creemDiscountId" className={labelClass}>
+            Creem discount ID
+          </label>
+          <input
+            id="creemDiscountId"
+            name="creemDiscountId"
+            type="text"
+            autoComplete="off"
+            maxLength={120}
+            defaultValue={coupon.creem_discount_id ?? ""}
+            placeholder="dis_..."
+            className={inputClass}
+          />
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            A mapped ID alone does not enable checkout discounts until
+            the checkout validation and webhook amounts are migrated.
           </p>
-
-          <div className="mt-2 break-all rounded-xl bg-[var(--surface-secondary)] px-4 py-3 text-sm">
-            {coupon.paddle_discount_id ??
-              "Created automatically when saved"}
-          </div>
         </div>
       </section>
 

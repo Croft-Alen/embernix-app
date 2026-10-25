@@ -82,13 +82,7 @@ export type ProductFormData = {
     | string
     | null;
 
-  paddle_product_id:
-    | string
-    | null;
-
-  paddle_price_id:
-    | string
-    | null;
+  creem_product_id: string | null;
 };
 
 type ProductFormProps = {
@@ -148,11 +142,7 @@ export default function ProductForm({
   const isEdit =
     mode === "edit";
 
-  const paddleConnected =
-    Boolean(
-      product.paddle_product_id &&
-        product.paddle_price_id
-    );
+  const creemConnected = Boolean(product.creem_product_id);
 
   return (
     <form
@@ -581,7 +571,7 @@ export default function ProductForm({
       </section>
 
       {/* ===================================================
-          PADDLE
+          CREEM PRODUCT MAPPING
       =================================================== */}
       <section className={sectionClass}>
         <div className="flex items-start justify-between gap-4">
@@ -589,56 +579,38 @@ export default function ProductForm({
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
               <ShoppingBag className="h-5 w-5" />
             </div>
-
             <div>
-              <h2 className="font-semibold">
-                Paddle
-              </h2>
-
+              <h2 className="font-semibold">Payment product</h2>
               <p className="mt-1 text-sm text-[var(--muted)]">
-                Paddle catalog product and pricing are synchronized automatically.
+                Connect this Embernix product to a Creem product in the same environment.
               </p>
             </div>
           </div>
-
-          {paddleConnected ? (
-            <span className="shrink-0 rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
-              Connected
-            </span>
-          ) : (
-            <span className="shrink-0 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-              Not connected
-            </span>
-          )}
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
+            creemConnected ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+          }`}>
+            {creemConnected ? "Mapped" : "Not mapped"}
+          </span>
         </div>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <div>
-            <p className="text-xs font-medium text-[var(--muted)]">
-              Paddle Product ID
-            </p>
-
-            <div className="mt-2 min-h-11 break-all rounded-xl bg-[var(--surface-secondary)] px-4 py-3 text-sm">
-              {product.paddle_product_id ??
-                "Created automatically when saved"}
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs font-medium text-[var(--muted)]">
-              Paddle Price ID
-            </p>
-
-            <div className="mt-2 min-h-11 break-all rounded-xl bg-[var(--surface-secondary)] px-4 py-3 text-sm">
-              {product.paddle_price_id ??
-                "Created automatically when saved"}
-            </div>
-          </div>
+        <div className="mt-6">
+          <label htmlFor="creemProductId" className={labelClass}>
+            Creem product ID
+          </label>
+          <input
+            id="creemProductId"
+            name="creemProductId"
+            type="text"
+            defaultValue={product.creem_product_id ?? ""}
+            placeholder="prod_..."
+            autoComplete="off"
+            className={inputClass}
+          />
+          <p className={helperClass}>
+            Create the product in the Creem dashboard, then enter its ID here.
+            Match the price and currency before accepting payments. Leave blank
+            until configured; an unmapped product cannot be checked out.
+          </p>
         </div>
-
-        <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-          Changing the product price automatically creates a new Paddle price and switches Embernix to it.
-        </p>
       </section>
 
       {/* ===================================================

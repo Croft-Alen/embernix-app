@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -6,7 +7,6 @@ import { usePathname } from "next/navigation";
 import {
   Boxes,
   FileText,
-  FolderKanban,
   Gauge,
   Headphones,
   Package,
@@ -15,7 +15,6 @@ import {
   ShoppingCart,
   TicketPercent,
   Users,
-  Wrench,
   X,
 } from "lucide-react";
 
@@ -51,12 +50,12 @@ const navigationSections: NavigationSection[] = [
     ],
   },
   {
-    title: "Management",
+    title: "Digital Products",
     items: [
       {
-        label: "Customers",
-        href: "/admin/customers",
-        icon: Users,
+        label: "Products",
+        href: "/admin/products",
+        icon: Package,
       },
       {
         label: "Orders",
@@ -64,37 +63,27 @@ const navigationSections: NavigationSection[] = [
         icon: ShoppingCart,
       },
       {
-        label: "Products",
-        href: "/admin/products",
-        icon: Package,
-      },
-      {
         label: "Coupons",
         href: "/admin/coupons",
         icon: TicketPercent,
+      },
+    ],
+  },
+  {
+    title: "Customers & Billing",
+    items: [
+      {
+        label: "Customers",
+        href: "/admin/customers",
+        icon: Users,
       },
       {
         label: "Invoices",
         href: "/admin/invoices",
         icon: ReceiptText,
       },
-    ],
-  },
-  {
-    title: "Operations",
-    items: [
       {
-        label: "Services",
-        href: "/admin/services",
-        icon: Wrench,
-      },
-      {
-        label: "Projects",
-        href: "/admin/projects",
-        icon: FolderKanban,
-      },
-      {
-        label: "Tickets",
+        label: "Support Tickets",
         href: "/admin/tickets",
         icon: Headphones,
       },
@@ -168,7 +157,6 @@ export default function AdminSidebar({
               <p className="text-[15px] font-semibold">
                 Embernix
               </p>
-
               <p
                 className="mt-0.5 text-[11px]"
                 style={{
@@ -200,7 +188,10 @@ export default function AdminSidebar({
           }}
         />
 
-        <nav className="flex-1 overflow-y-auto px-3 py-5">
+        <nav
+          className="flex-1 overflow-y-auto px-3 py-5"
+          aria-label="Admin navigation"
+        >
           <div className="space-y-7">
             {navigationSections.map((section) => (
               <div key={section.title}>
@@ -228,6 +219,9 @@ export default function AdminSidebar({
                         key={item.href}
                         href={item.href}
                         onClick={onClose}
+                        aria-current={
+                          active ? "page" : undefined
+                        }
                         className="flex h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-medium transition-colors"
                         style={
                           active

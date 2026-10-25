@@ -22,10 +22,6 @@ import {
   createNotification,
 } from "@/lib/notifications/create-notification";
 
-import {
-  syncProductToPaddle,
-} from "@/lib/paddle/catalog";
-
 /* =========================================================
    TYPES
 ========================================================= */
@@ -1236,6 +1232,12 @@ function validateProduct(
       )
     );
 
+  const creemProductId = nullableString(formData.get("creemProductId"));
+
+  if (creemProductId && !/^prod_[a-zA-Z0-9_-]+$/.test(creemProductId)) {
+    throw new Error("Invalid Creem product ID.");
+  }
+
   const active =
     parseBoolean(
       formData.get(
@@ -1283,6 +1285,8 @@ function validateProduct(
   return {
     id: productId,
 
+    creem_product_id: creemProductId,
+
     name,
     slug,
 
@@ -1316,99 +1320,6 @@ function validateProduct(
     seo_description:
       seoDescription,
   };
-}
-
-/* =========================================================
-   PADDLE CATALOG SYNC
-========================================================= */
-
-async function syncSavedProductWithPaddle(
-  productId: string
-) {
-  const admin =
-    createAdminClient();
-
-  const {
-    data: product,
-    error,
-  } = await admin
-    .from("products")
-    .select(`
-      id,
-      name,
-      short_description,
-      image_url,
-      price_cents,
-      currency,
-      paddle_product_id,
-      paddle_price_id
-    `)
-    .eq(
-      "id",
-      productId
-    )
-    .maybeSingle();
-
-  if (
-    error ||
-    !product
-  ) {
-    throw new Error(
-      "Unable to load product for Paddle sync."
-    );
-  }
-
-  const result =
-    await syncProductToPaddle({
-      productId:
-        product.id,
-
-      name:
-        product.name,
-
-      shortDescription:
-        product.short_description,
-
-      imageUrl:
-        product.image_url,
-
-      priceCents:
-        product.price_cents,
-
-      currency:
-        product.currency,
-
-      paddleProductId:
-        product.paddle_product_id,
-
-      paddlePriceId:
-        product.paddle_price_id,
-    });
-
-  const {
-    error: updateError,
-  } = await admin
-    .from("products")
-    .update({
-      paddle_product_id:
-        result.paddleProductId,
-
-      paddle_price_id:
-        result.paddlePriceId,
-
-      updated_at:
-        new Date().toISOString(),
-    })
-    .eq(
-      "id",
-      productId
-    );
-
-  if (updateError) {
-    throw new Error(
-      "Paddle sync succeeded but Embernix could not save the Paddle IDs."
-    );
-  }
 }
 
 /* =========================================================
@@ -1566,23 +1477,6 @@ export async function createProduct(
     );
   }
 
-  /*
-   * Paddle is intentionally NOT part
-   * of the destructive rollback.
-   *
-   * Product remains usable/admin-editable
-   * even if Paddle API is temporarily down.
-   */
-  try {
-    await syncSavedProductWithPaddle(
-      productId
-    );
-  } catch (error) {
-    console.error(
-      "Paddle catalog sync failed:",
-      error
-    );
-  }
 
   revalidatePath(
     "/admin/products"
@@ -1744,6 +1638,8 @@ export async function updateProduct(
   } = await admin
     .from("products")
     .update({
+      creem_product_id: product.creem_product_id,
+
       name:
         product.name,
 
@@ -1940,22 +1836,6 @@ export async function updateProduct(
     }
   }
 
-  /*
-   * Sync metadata/price into Paddle.
-   *
-   * A Paddle failure should not destroy
-   * the Embernix product edit.
-   */
-  try {
-    await syncSavedProductWithPaddle(
-      productId
-    );
-  } catch (error) {
-    console.error(
-      "Paddle catalog sync failed:",
-      error
-    );
-  }
 
   revalidatePath(
     "/admin/products"

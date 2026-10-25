@@ -87,8 +87,7 @@ export default async function EditProductPage({
       seo_description,
       demo_url,
       documentation_url,
-      paddle_product_id,
-      paddle_price_id
+      creem_product_id
     `)
     .eq(
       "id",

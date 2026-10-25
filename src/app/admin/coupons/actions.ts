@@ -16,10 +16,7 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
-import {
-  syncDiscountToPaddle,
-  type EmbernixDiscountType,
-} from "@/lib/paddle/discounts";
+type EmbernixDiscountType = "percentage" | "flat";
 
 /* =========================================================
    HELPERS
@@ -123,6 +120,14 @@ function redirectError(
       }
     )
   );
+}
+
+function readCreemDiscountId(formData: FormData): string | null {
+  const value = nullableString(formData.get("creemDiscountId"));
+  if (value && !/^dis_[A-Za-z0-9_-]{3,116}$/.test(value)) {
+    throw new Error("Enter a valid Creem discount ID (dis_...).");
+  }
+  return value;
 }
 
 /* =========================================================
@@ -382,104 +387,6 @@ function parseCoupon(
 }
 
 /* =========================================================
-   PADDLE SYNC
-========================================================= */
-
-async function syncSavedCouponWithPaddle(
-  couponId: string
-) {
-  const admin =
-    createAdminClient();
-
-  const {
-    data: coupon,
-    error,
-  } = await admin
-    .from("coupons")
-    .select(`
-      id,
-      code,
-      description,
-      discount_type,
-      amount,
-      currency,
-      active,
-      expires_at,
-      usage_limit,
-      paddle_discount_id
-    `)
-    .eq(
-      "id",
-      couponId
-    )
-    .maybeSingle();
-
-  if (
-    error ||
-    !coupon
-  ) {
-    throw new Error(
-      "Unable to load coupon for Paddle sync."
-    );
-  }
-
-  const result =
-    await syncDiscountToPaddle({
-      couponId:
-        coupon.id,
-
-      code:
-        coupon.code,
-
-      description:
-        coupon.description,
-
-      discountType:
-        coupon.discount_type as EmbernixDiscountType,
-
-      amount:
-        coupon.amount,
-
-      currency:
-        coupon.currency,
-
-      active:
-        coupon.active,
-
-      expiresAt:
-        coupon.expires_at,
-
-      usageLimit:
-        coupon.usage_limit,
-
-      paddleDiscountId:
-        coupon.paddle_discount_id,
-    });
-
-  const {
-    error: updateError,
-  } = await admin
-    .from("coupons")
-    .update({
-      paddle_discount_id:
-        result.paddleDiscountId,
-
-      updated_at:
-        new Date().toISOString(),
-    })
-    .eq(
-      "id",
-      couponId
-    );
-
-  if (updateError) {
-    throw new Error(
-      "Paddle coupon was synchronized but Embernix could not save its Paddle ID."
-    );
-  }
-}
-
-/* =========================================================
    CREATE
 ========================================================= */
 
@@ -539,6 +446,8 @@ export async function createCoupon(
       usage_limit:
         coupon.usage_limit,
 
+      creem_discount_id: readCreemDiscountId(formData),
+
       updated_at:
         new Date().toISOString(),
     })
@@ -557,32 +466,6 @@ export async function createCoupon(
         : "Unable to create coupon."
     );
   }
-
-  try {
-    await syncSavedCouponWithPaddle(
-      created.id
-    );
-  } catch (error) {
-    console.error(
-      "Paddle coupon sync failed:",
-      error
-    );
-
-    revalidatePath(
-      "/admin/coupons"
-    );
-
-    redirect(
-      createUrl(
-        `/admin/coupons/${created.id}/edit`,
-        {
-          error:
-            "Coupon was created, but Paddle sync failed. Save it again to retry.",
-        }
-      )
-    );
-  }
-
   revalidatePath(
     "/admin/coupons"
   );
@@ -661,6 +544,8 @@ export async function updateCoupon(
       usage_limit:
         coupon.usage_limit,
 
+      creem_discount_id: readCreemDiscountId(formData),
+
       updated_at:
         new Date().toISOString(),
     })
@@ -678,32 +563,6 @@ export async function updateCoupon(
         : "Unable to save coupon."
     );
   }
-
-  try {
-    await syncSavedCouponWithPaddle(
-      couponId
-    );
-  } catch (error) {
-    console.error(
-      "Paddle coupon sync failed:",
-      error
-    );
-
-    revalidatePath(
-      "/admin/coupons"
-    );
-
-    redirect(
-      createUrl(
-        errorPath,
-        {
-          error:
-            "Coupon was saved in Embernix, but Paddle sync failed. Save again to retry.",
-        }
-      )
-    );
-  }
-
   revalidatePath(
     "/admin/coupons"
   );
@@ -760,18 +619,6 @@ export async function toggleCouponStatus(
 
     return;
   }
-
-  try {
-    await syncSavedCouponWithPaddle(
-      couponId
-    );
-  } catch (error) {
-    console.error(
-      "Failed to sync coupon status with Paddle:",
-      error
-    );
-  }
-
   revalidatePath(
     "/admin/coupons"
   );

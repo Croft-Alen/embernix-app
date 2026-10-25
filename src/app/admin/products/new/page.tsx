@@ -113,16 +113,7 @@ export default async function NewProductPage({
             "",
 
           active: true,
-
-          /*
-           * Automatically created
-           * after product save.
-           */
-          paddle_product_id:
-            null,
-
-          paddle_price_id:
-            null,
+          creem_product_id: null,
         }}
       />
     </div>

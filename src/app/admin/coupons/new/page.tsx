@@ -82,7 +82,7 @@ export default async function NewCouponPage({
           usage_limit:
             null,
 
-          paddle_discount_id:
+          creem_discount_id:
             null,
         }}
       />

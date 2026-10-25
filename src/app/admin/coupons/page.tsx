@@ -100,7 +100,7 @@ export default async function AdminCouponsPage() {
       active,
       expires_at,
       usage_limit,
-      paddle_discount_id,
+      creem_discount_id,
       created_at
     `)
     .order(
@@ -186,7 +186,7 @@ export default async function AdminCouponsPage() {
                     </th>
 
                     <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
-                      Paddle
+                      Creem
                     </th>
 
                     <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
@@ -251,12 +251,12 @@ export default async function AdminCouponsPage() {
                           <td className="px-5 py-4">
                             <span
                               className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                                coupon.paddle_discount_id
+                                coupon.creem_discount_id
                                   ? "bg-blue-50 text-blue-700"
                                   : "bg-amber-50 text-amber-700"
                               }`}
                             >
-                              {coupon.paddle_discount_id
+                              {coupon.creem_discount_id
                                 ? "Connected"
                                 : "Not connected"}
                             </span>

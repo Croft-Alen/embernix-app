@@ -1,341 +1,120 @@
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
+import { NextResponse } from "next/server";
 
-import {
-  createAdminClient,
-} from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { validateCheckoutCoupon } from "@/lib/creem/validate-coupon";
 
-import {
-  createClient,
-} from "@/lib/supabase/server";
+export const runtime = "nodejs";
 
-export const runtime =
-  "nodejs";
-
-type CouponRequest = {
-  code?: string;
-  productSlug?: string;
-};
-
-function normalizeCode(
-  value: string
-) {
-  return value
-    .trim()
-    .toUpperCase();
-}
-
-export async function POST(
-  request: NextRequest
-) {
+export async function POST(request: Request) {
   try {
-    const supabase =
-      await createClient();
+    const supabase = await createClient();
 
     const {
       data: { user },
-    } =
-      await supabase.auth.getUser();
+    } = await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json(
-        {
-          error:
-            "Please sign in before applying a coupon.",
-        },
-        {
-          status: 401,
-        }
+        { error: "Please sign in." },
+        { status: 401 }
       );
     }
 
-    const body =
-      (await request
-        .json()
-        .catch(() => null)) as
-        | CouponRequest
-        | null;
+    const body: unknown = await request
+      .json()
+      .catch(() => null);
+
+    if (
+      !body ||
+      typeof body !== "object" ||
+      Array.isArray(body)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid request." },
+        { status: 400 }
+      );
+    }
+
+    const payload = body as Record<string, unknown>;
 
     const code =
-      normalizeCode(
-        body?.code ?? ""
-      );
+      typeof payload.code === "string"
+        ? payload.code.trim().toUpperCase()
+        : "";
 
-    const productSlug =
-      String(
-        body?.productSlug ??
-          ""
-      ).trim();
+    const slug =
+      typeof payload.productSlug === "string"
+        ? payload.productSlug.trim()
+        : "";
 
-    if (!code) {
+    if (
+      !/^[A-Z0-9]{1,32}$/.test(code) ||
+      !/^[a-zA-Z0-9_-]{1,200}$/.test(slug)
+    ) {
       return NextResponse.json(
-        {
-          error:
-            "Enter a coupon code.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Invalid coupon or product." },
+        { status: 400 }
       );
     }
 
-    if (!productSlug) {
-      return NextResponse.json(
-        {
-          error:
-            "Product information is missing.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
+    const admin = createAdminClient();
 
-    const admin =
-      createAdminClient();
-
-    const {
-      data: product,
-      error:
-        productError,
-    } = await admin
+    const { data: product, error } = await admin
       .from("products")
-      .select(`
-        id,
-        slug,
-        price_cents,
-        currency,
-        active
-      `)
-      .eq(
-        "slug",
-        productSlug
+      .select(
+        "id,price_cents,currency,creem_product_id"
       )
-      .eq(
-        "active",
-        true
-      )
+      .eq("slug", slug)
+      .eq("active", true)
       .maybeSingle();
 
-    if (
-      productError ||
-      !product
-    ) {
+    if (error) {
       return NextResponse.json(
-        {
-          error:
-            "This product is unavailable.",
-        },
-        {
-          status: 404,
-        }
+        { error: "Unable to load product." },
+        { status: 500 }
       );
     }
 
-    const {
-      data: coupon,
-      error:
-        couponError,
-    } = await admin
-      .from("coupons")
-      .select(`
-        id,
-        code,
-        description,
-        discount_type,
-        amount,
-        currency,
-        active,
-        expires_at,
-        usage_limit,
-        paddle_discount_id
-      `)
-      .eq(
-        "code",
-        code
-      )
-      .maybeSingle();
-
-    if (
-      couponError ||
-      !coupon
-    ) {
+    if (!product?.creem_product_id) {
       return NextResponse.json(
-        {
-          error:
-            "Coupon code is invalid.",
-        },
-        {
-          status: 404,
-        }
+        { error: "Product unavailable." },
+        { status: 404 }
       );
     }
 
-    if (!coupon.active) {
-      return NextResponse.json(
-        {
-          error:
-            "This coupon is no longer active.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      !coupon.paddle_discount_id
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "This coupon is not ready for checkout yet.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      coupon.expires_at
-    ) {
-      const expiry =
-        new Date(
-          coupon.expires_at
-        );
-
-      if (
-        !Number.isNaN(
-          expiry.getTime()
-        ) &&
-        expiry.getTime() <=
-          Date.now()
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "This coupon has expired.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-    }
-
-    if (
-      coupon.discount_type ===
-        "flat" &&
-      String(
-        coupon.currency ??
-          ""
-      ).toUpperCase() !==
-        String(
-          product.currency
-        ).toUpperCase()
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "This coupon cannot be used with this currency.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const subtotal =
-      Number(
-        product.price_cents
-      );
-
-    let discountCents =
-      0;
-
-    if (
-      coupon.discount_type ===
-      "percentage"
-    ) {
-      discountCents =
-        Math.round(
-          subtotal *
-            (Number(
-              coupon.amount
-            ) /
-              100)
-        );
-    } else {
-      discountCents =
-        Number(
-          coupon.amount
-        );
-    }
-
-    discountCents =
-      Math.max(
-        0,
-        Math.min(
-          discountCents,
-          subtotal
-        )
-      );
-
-    const discountedTotal =
-      Math.max(
-        0,
-        subtotal -
-          discountCents
-      );
+    const coupon = await validateCheckoutCoupon({
+      code,
+      productId: product.id,
+      creemProductId: product.creem_product_id,
+      productPriceCents: Number(product.price_cents),
+      currency: product.currency,
+    });
 
     return NextResponse.json({
       valid: true,
 
       coupon: {
-        code:
-          coupon.code,
-
-        description:
-          coupon.description,
-
-        discountType:
-          coupon.discount_type,
-
-        amount:
-          coupon.amount,
-
-        currency:
-          coupon.currency,
-
-        paddleDiscountId:
-          coupon.paddle_discount_id,
+        code: coupon.code,
+        description: coupon.description,
+        discountType: coupon.discountType,
+        amount: coupon.amount,
+        currency: coupon.currency,
       },
 
-      subtotalCents:
-        subtotal,
-
-      discountCents,
-
-      totalCents:
-        discountedTotal,
+      subtotalCents: Number(product.price_cents),
+      discountCents: coupon.discountCents,
+      totalCents: coupon.totalCents,
     });
   } catch (error) {
-    console.error(
-      "Coupon validation error:",
-      error
-    );
-
     return NextResponse.json(
       {
         error:
-          "Unable to validate coupon. Please try again.",
+          error instanceof Error
+            ? error.message
+            : "Could not validate coupon.",
       },
-      {
-        status: 500,
-      }
+      { status: 400 }
     );
   }
 }

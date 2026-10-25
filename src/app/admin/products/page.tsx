@@ -43,8 +43,7 @@ export default async function AdminProductsPage({
       version,
       image_url,
       active,
-      paddle_product_id,
-      paddle_price_id,
+      creem_product_id,
       created_at
     `)
     .order(
@@ -130,7 +129,7 @@ export default async function AdminProductsPage({
                     </th>
 
                     <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
-                      Paddle
+                      Creem
                     </th>
 
                     <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
@@ -146,10 +145,9 @@ export default async function AdminProductsPage({
                 <tbody>
                   {products.map(
                     (product) => {
-                      const paddleConnected =
+                      const creemConnected =
                         Boolean(
-                          product.paddle_product_id &&
-                            product.paddle_price_id
+                          product.creem_product_id
                         );
 
                       const toggleAction =
@@ -222,19 +220,19 @@ export default async function AdminProductsPage({
                           {/* VERSION */}
                           <td className="px-5 py-4 text-sm text-[var(--muted)]">
                             {product.version ||
-                              "—"}
+                              "â€”"}
                           </td>
 
-                          {/* PADDLE */}
+                          {/* CREEM */}
                           <td className="px-5 py-4">
                             <span
                               className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                                paddleConnected
+                                creemConnected
                                   ? "bg-blue-50 text-blue-700"
                                   : "bg-amber-50 text-amber-700"
                               }`}
                             >
-                              {paddleConnected
+                              {creemConnected
                                 ? "Connected"
                                 : "Not connected"}
                             </span>
