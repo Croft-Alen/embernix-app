@@ -5,10 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import {
-  Boxes,
   FileText,
   Gauge,
   Headphones,
+  KeyRound,
   Package,
   ReceiptText,
   Settings,
@@ -61,6 +61,11 @@ const navigationSections: NavigationSection[] = [
         label: "Orders",
         href: "/admin/orders",
         icon: ShoppingCart,
+      },
+      {
+        label: "Licenses",
+        href: "/admin/licenses",
+        icon: KeyRound,
       },
       {
         label: "Coupons",
@@ -210,18 +215,14 @@ export default function AdminSidebar({
 
                     const active =
                       pathname === item.href ||
-                      pathname.startsWith(
-                        `${item.href}/`
-                      );
+                      pathname.startsWith(`${item.href}/`);
 
                     return (
                       <Link
                         key={item.href}
                         href={item.href}
                         onClick={onClose}
-                        aria-current={
-                          active ? "page" : undefined
-                        }
+                        aria-current={active ? "page" : undefined}
                         className="flex h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-medium transition-colors"
                         style={
                           active
@@ -236,14 +237,8 @@ export default function AdminSidebar({
                               }
                         }
                       >
-                        <Icon
-                          size={18}
-                          strokeWidth={2}
-                        />
-
-                        <span>
-                          {item.label}
-                        </span>
+                        <Icon size={18} strokeWidth={2} />
+                        <span>{item.label}</span>
                       </Link>
                     );
                   })}
@@ -252,25 +247,6 @@ export default function AdminSidebar({
             ))}
           </div>
         </nav>
-
-        <div
-          className="mx-5 h-px"
-          style={{
-            background: "rgba(255,255,255,0.08)",
-          }}
-        />
-
-        <div className="p-5">
-          <div
-            className="flex items-center gap-2 text-xs"
-            style={{
-              color: "rgba(255,255,255,0.38)",
-            }}
-          >
-            <Boxes className="h-4 w-4" />
-            Embernix Control Center
-          </div>
-        </div>
       </aside>
     </>
   );

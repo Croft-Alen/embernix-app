@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -18,7 +19,6 @@ export default async function CheckoutPage({
   const query = await searchParams;
   const productSlug = query.product?.trim();
 
-  // Only digital products can be purchased.
   if (!productSlug) {
     redirect("/products");
   }
@@ -29,7 +29,6 @@ export default async function CheckoutPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Require authentication before checkout.
   if (!user) {
     const next = `/checkout?product=${encodeURIComponent(
       productSlug
@@ -40,7 +39,6 @@ export default async function CheckoutPage({
 
   const admin = createAdminClient();
 
-  // Load an active digital product.
   const {
     data: product,
     error: productError,
@@ -73,16 +71,14 @@ export default async function CheckoutPage({
     redirect("/products");
   }
 
-  // Check whether the customer already owns this product.
   const {
     data: ownership,
     error: ownershipError,
   } = await admin
     .from("customer_products")
-    .select("id")
+    .select("id,status")
     .eq("user_id", user.id)
     .eq("product_id", product.id)
-    .eq("status", "active")
     .maybeSingle();
 
   if (ownershipError) {
@@ -94,8 +90,17 @@ export default async function CheckoutPage({
     throw new Error("Unable to verify product ownership.");
   }
 
-  // Customers should not repurchase an actively owned product.
-  if (ownership) {
+  if (ownership?.status === "active") {
+    redirect(`/products/${product.id}`);
+  }
+
+  const renewalRequired =
+    ownership?.status === "renewal_required";
+
+  if (
+    ownership &&
+    !renewalRequired
+  ) {
     redirect(`/products/${product.id}`);
   }
 
@@ -113,11 +118,13 @@ export default async function CheckoutPage({
 
       <div className="mb-7 mt-6">
         <h1 className="text-2xl font-semibold text-[var(--foreground)]">
-          Checkout
+          {renewalRequired ? "Renew License" : "Checkout"}
         </h1>
 
         <p className="mt-2 text-sm text-[var(--muted)]">
-          Review your digital product and complete your purchase.
+          {renewalRequired
+            ? "Complete payment to reactivate access to your digital product."
+            : "Review your digital product and complete your purchase."}
         </p>
       </div>
 

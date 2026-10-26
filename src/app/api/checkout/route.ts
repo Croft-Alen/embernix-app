@@ -46,9 +46,7 @@ function fail(
   );
 }
 
-function parseReservation(
-  value: unknown
-): ReservationResult {
+function parseReservation(value: unknown): ReservationResult {
   if (!isRecord(value)) {
     throw new Error("Invalid checkout reservation response.");
   }
@@ -95,8 +93,7 @@ function requireCheckoutUrl(value: string): string {
 
 export async function POST(request: Request) {
   try {
-    const body: unknown =
-      await request.json().catch(() => null);
+    const body: unknown = await request.json().catch(() => null);
 
     if (!isRecord(body)) {
       return fail("Invalid checkout request.");
@@ -117,9 +114,7 @@ export async function POST(request: Request) {
     }
 
     if (body.acceptedTerms !== true) {
-      return fail(
-        "Please accept the terms before checkout."
-      );
+      return fail("Please accept the terms before checkout.");
     }
 
     if (
@@ -142,15 +137,14 @@ export async function POST(request: Request) {
 
     const admin = createAdminClient();
 
-    const { data: product, error: productError } =
-      await admin
-        .from("products")
-        .select(
-          "id,slug,name,price_cents,currency,active,creem_product_id"
-        )
-        .eq("slug", productSlug)
-        .eq("active", true)
-        .maybeSingle();
+    const { data: product, error: productError } = await admin
+      .from("products")
+      .select(
+        "id,slug,name,price_cents,currency,active,creem_product_id"
+      )
+      .eq("slug", productSlug)
+      .eq("active", true)
+      .maybeSingle();
 
     if (productError) {
       console.error(
@@ -180,19 +174,15 @@ export async function POST(request: Request) {
       priceCents <= 0 ||
       !/^[A-Z]{3}$/.test(currency)
     ) {
-      return fail(
-        "Invalid product price or currency.",
-        409
-      );
+      return fail("Invalid product price or currency.", 409);
     }
 
     const { data: ownership, error: ownershipError } =
       await admin
         .from("customer_products")
-        .select("id")
+        .select("id,status")
         .eq("user_id", user.id)
         .eq("product_id", product.id)
-        .eq("status", "active")
         .maybeSingle();
 
     if (ownershipError) {
@@ -202,10 +192,34 @@ export async function POST(request: Request) {
       );
     }
 
-    if (ownership) {
+    if (ownership?.status === "active") {
       return NextResponse.json({
         ownedProductId: product.id,
       });
+    }
+
+    if (ownership?.status === "revoked") {
+      return fail(
+        "Your product access has been revoked. Contact support.",
+        403
+      );
+    }
+
+    if (ownership?.status === "refunded") {
+      return fail(
+        "This purchase was refunded. Contact support.",
+        403
+      );
+    }
+
+    if (
+      ownership &&
+      ownership.status !== "renewal_required"
+    ) {
+      return fail(
+        "This license is not available for checkout.",
+        409
+      );
     }
 
     let discountCents = 0;
@@ -255,15 +269,14 @@ export async function POST(request: Request) {
       return fail(prepared.error);
     }
 
-    const { data: order, error: orderError } =
-      await admin
-        .from("orders")
-        .select(
-          "id,user_id,order_number,status,payment_status,payment_provider,currency,subtotal_cents,total_cents,creem_checkout_id,creem_checkout_state"
-        )
-        .eq("order_number", prepared.orderNumber)
-        .eq("user_id", user.id)
-        .maybeSingle();
+    const { data: order, error: orderError } = await admin
+      .from("orders")
+      .select(
+        "id,user_id,order_number,status,payment_status,payment_provider,currency,subtotal_cents,total_cents,creem_checkout_id,creem_checkout_state"
+      )
+      .eq("order_number", prepared.orderNumber)
+      .eq("user_id", user.id)
+      .maybeSingle();
 
     if (orderError || !order) {
       return fail("Checkout order not found.", 500);
@@ -280,13 +293,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: items, error: itemsError } =
-      await admin
-        .from("order_items")
-        .select(
-          "item_type,product_id,quantity,unit_price_cents"
-        )
-        .eq("order_id", order.id);
+    const { data: items, error: itemsError } = await admin
+      .from("order_items")
+      .select(
+        "item_type,product_id,quantity,unit_price_cents"
+      )
+      .eq("order_id", order.id);
 
     if (
       itemsError ||

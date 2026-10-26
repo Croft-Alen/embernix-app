@@ -123,10 +123,9 @@ export async function prepareCheckoutOrder(
 
   const { data: ownership, error: ownershipError } = await admin
     .from("customer_products")
-    .select("id")
+    .select("id,status")
     .eq("user_id", user.id)
     .eq("product_id", product.id)
-    .eq("status", "active")
     .maybeSingle();
 
   if (ownershipError) {
@@ -141,11 +140,35 @@ export async function prepareCheckoutOrder(
     };
   }
 
-  if (ownership) {
+  if (ownership?.status === "active") {
     return {
       success: false,
       error: "You already own this product.",
       ownedProductId: product.id,
+    };
+  }
+
+  if (ownership?.status === "revoked") {
+    return {
+      success: false,
+      error: "Your product access has been revoked. Contact support.",
+    };
+  }
+
+  if (ownership?.status === "refunded") {
+    return {
+      success: false,
+      error: "This purchase was refunded. Contact support.",
+    };
+  }
+
+  if (
+    ownership &&
+    ownership.status !== "renewal_required"
+  ) {
+    return {
+      success: false,
+      error: "This license is not available for checkout.",
     };
   }
 
