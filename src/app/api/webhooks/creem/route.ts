@@ -32,6 +32,7 @@ function record(
   key: string
 ): JsonRecord | null {
   const value = source[key];
+
   return isRecord(value) ? value : null;
 }
 
@@ -43,7 +44,7 @@ function str(
 
   return typeof value === "string" &&
     value.trim().length > 0
-    ? value
+    ? value.trim()
     : null;
 }
 
@@ -72,17 +73,11 @@ function verifySignature(
     return false;
   }
 
-  const expected = createHmac(
-    "sha256",
-    secret
-  )
+  const expected = createHmac("sha256", secret)
     .update(body, "utf8")
     .digest();
 
-  const received = Buffer.from(
-    signature,
-    "hex"
-  );
+  const received = Buffer.from(signature, "hex");
 
   return (
     expected.length === received.length &&
@@ -103,56 +98,307 @@ function parseEvent(payload: unknown): CreemEvent {
     throw new Error("Missing webhook event data.");
   }
 
-  return { id, eventType, object };
+  return {
+    id,
+    eventType,
+    object,
+  };
+}
+
+function getCreemApiConfig() {
+  const apiKey = process.env.CREEM_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("CREEM_API_KEY is missing.");
+  }
+
+  const environment =
+    process.env.CREEM_ENVIRONMENT?.toLowerCase();
+
+  if (
+    environment !== "test" &&
+    environment !== "production"
+  ) {
+    throw new Error(
+      "CREEM_ENVIRONMENT must be test or production."
+    );
+  }
+
+  return {
+    apiKey,
+    baseUrl:
+      environment === "test"
+        ? "https://test-api.creem.io"
+        : "https://api.creem.io",
+    environment,
+  };
+}
+
+async function retrieveCheckout(
+  checkoutId: string
+): Promise<JsonRecord> {
+  const config = getCreemApiConfig();
+
+  const url = new URL(
+    "/v1/checkouts",
+    config.baseUrl
+  );
+
+  url.searchParams.set("checkout_id", checkoutId);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "x-api-key": config.apiKey,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    console.error(
+      "Creem checkout lookup failed:",
+      {
+        checkoutId,
+        status: response.status,
+      }
+    );
+
+    throw new Error(
+      "Unable to verify checkout with Creem."
+    );
+  }
+
+  const data: unknown = await response.json();
+
+  if (!isRecord(data)) {
+    throw new Error(
+      "Creem returned invalid checkout data."
+    );
+  }
+
+  if (str(data, "id") !== checkoutId) {
+    throw new Error(
+      "Creem checkout identifier mismatch."
+    );
+  }
+
+  if (str(data, "status") !== "completed") {
+    throw new Error(
+      "Checkout is not completed."
+    );
+  }
+
+  const mode = str(data, "mode");
+
+  if (mode && mode !== config.environment) {
+    throw new Error(
+      "Creem checkout environment mismatch."
+    );
+  }
+
+  return data;
+}
+
+function getNestedId(
+  source: JsonRecord,
+  key: string
+): string | null {
+  const value = source[key];
+
+  if (typeof value === "string") {
+    return value.trim() || null;
+  }
+
+  if (isRecord(value)) {
+    return str(value, "id");
+  }
+
+  return null;
+}
+
+function requireUuid(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new Error(
+      "Invalid local purchase identifier."
+    );
+  }
+
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  if (!uuidPattern.test(value)) {
+    throw new Error(
+      "Invalid local purchase identifier."
+    );
+  }
+
+  return value;
 }
 
 async function completeCheckout(
   event: CreemEvent
 ): Promise<string> {
-  const checkout = event.object;
+  const eventCheckoutId = str(event.object, "id");
+
+  if (!eventCheckoutId) {
+    throw new Error(
+      "Webhook checkout ID is missing."
+    );
+  }
+
+  const admin = createAdminClient();
+
+  const {
+    data: localOrder,
+    error: orderError,
+  } = await admin
+    .from("orders")
+    .select(
+      "id,user_id,order_number,customer_email,creem_checkout_id"
+    )
+    .eq("creem_checkout_id", eventCheckoutId)
+    .maybeSingle();
+
+  if (orderError) {
+    console.error(
+      "Creem local order lookup failed:",
+      orderError
+    );
+
+    throw new Error(
+      "Unable to load original checkout order."
+    );
+  }
+
+  if (!localOrder) {
+    throw new Error(
+      "Original Embernix order not found."
+    );
+  }
+
+  const localOrderId = requireUuid(localOrder.id);
+  const localUserId = requireUuid(localOrder.user_id);
+  const orderNumber = localOrder.order_number;
+
+  if (
+    typeof orderNumber !== "string" ||
+    !orderNumber.trim()
+  ) {
+    throw new Error(
+      "Original order number is invalid."
+    );
+  }
+
+  const {
+    data: items,
+    error: itemsError,
+  } = await admin
+    .from("order_items")
+    .select("product_id")
+    .eq("order_id", localOrderId);
+
+  if (itemsError) {
+    console.error(
+      "Creem order items lookup failed:",
+      itemsError
+    );
+
+    throw new Error(
+      "Unable to load original order items."
+    );
+  }
+
+  if (!items || items.length !== 1) {
+    throw new Error(
+      "Creem checkout must contain exactly one product."
+    );
+  }
+
+  const localProductId = requireUuid(
+    items[0].product_id
+  );
+
+  const {
+    data: localProduct,
+    error: productError,
+  } = await admin
+    .from("products")
+    .select("id,creem_product_id")
+    .eq("id", localProductId)
+    .maybeSingle();
+
+  if (productError || !localProduct) {
+    throw new Error(
+      "Original Embernix product not found."
+    );
+  }
+
+  const localCreemProductId =
+    localProduct.creem_product_id;
+
+  if (
+    typeof localCreemProductId !== "string" ||
+    !localCreemProductId
+  ) {
+    throw new Error(
+      "Product is not connected to Creem."
+    );
+  }
+
+  const checkout = await retrieveCheckout(
+    eventCheckoutId
+  );
 
   const checkoutId = str(checkout, "id");
   const requestId = str(checkout, "request_id");
   const checkoutStatus = str(checkout, "status");
 
-  const order = record(checkout, "order");
-  const product = record(checkout, "product");
-  const customer = record(checkout, "customer");
-  const metadata = record(checkout, "metadata");
+  const creemOrder = record(checkout, "order");
+  const creemProduct = record(checkout, "product");
+  const creemCustomer = record(checkout, "customer");
 
   if (
     !checkoutId ||
     !requestId ||
     checkoutStatus !== "completed" ||
-    !order ||
-    !product ||
-    !customer ||
-    !metadata
+    !creemOrder ||
+    !creemProduct ||
+    !creemCustomer
   ) {
     throw new Error(
-      "Completed checkout has missing fields."
+      "Verified checkout has missing fields."
     );
   }
 
-  const creemOrderId = str(order, "id");
-  const orderStatus = str(order, "status");
-  const orderType = str(order, "type");
-  const orderProductId = str(order, "product");
+  const creemOrderId = str(creemOrder, "id");
+  const orderStatus = str(creemOrder, "status");
+  const orderType = str(creemOrder, "type");
 
-  const creemProductId = str(product, "id");
-  const billingType = str(product, "billing_type");
-
-  const creemCustomerId = str(customer, "id");
-  const customerEmail = str(customer, "email");
-
-  const metadataOrderNumber = str(
-    metadata,
-    "orderNumber"
+  const orderProductId = getNestedId(
+    creemOrder,
+    "product"
   );
-  const metadataUserId = str(metadata, "userId");
-  const metadataProductId = str(
-    metadata,
-    "productId"
+
+  const creemProductId = str(
+    creemProduct,
+    "id"
+  );
+
+  const billingType = str(
+    creemProduct,
+    "billing_type"
+  );
+
+  const creemCustomerId = str(
+    creemCustomer,
+    "id"
+  );
+
+  const customerEmail = str(
+    creemCustomer,
+    "email"
   );
 
   if (
@@ -160,13 +406,10 @@ async function completeCheckout(
     orderStatus !== "paid" ||
     !creemProductId ||
     !creemCustomerId ||
-    !customerEmail ||
-    !metadataOrderNumber ||
-    !metadataUserId ||
-    !metadataProductId
+    !customerEmail
   ) {
     throw new Error(
-      "Missing paid order information."
+      "Creem checkout is missing paid order information."
     );
   }
 
@@ -182,54 +425,97 @@ async function completeCheckout(
   }
 
   if (
-    requestId !== metadataOrderNumber ||
+    requestId !== orderNumber ||
+    checkoutId !== localOrder.creem_checkout_id ||
+    creemProductId !== localCreemProductId ||
     (orderProductId &&
       orderProductId !== creemProductId)
   ) {
     throw new Error(
-      "Checkout product or order reference mismatch."
+      "Verified checkout does not match original purchase."
     );
   }
 
-  const uuidPattern =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const metadata = record(checkout, "metadata");
+
+  if (metadata) {
+    const metadataOrderNumber = str(
+      metadata,
+      "orderNumber"
+    );
+
+    const metadataUserId = str(
+      metadata,
+      "userId"
+    );
+
+    const metadataProductId = str(
+      metadata,
+      "productId"
+    );
+
+    if (
+      (metadataOrderNumber &&
+        metadataOrderNumber !== orderNumber) ||
+      (metadataUserId &&
+        metadataUserId !== localUserId) ||
+      (metadataProductId &&
+        metadataProductId !== localProductId)
+    ) {
+      throw new Error(
+        "Verified checkout metadata does not match original order."
+      );
+    }
+  }
 
   if (
-    !uuidPattern.test(metadataUserId) ||
-    !uuidPattern.test(metadataProductId)
+    localOrder.customer_email &&
+    localOrder.customer_email.trim().toLowerCase() !==
+      customerEmail.trim().toLowerCase()
   ) {
-    console.error("Creem metadata validation failed:", {
-      eventId: event.id,
-      checkoutId,
-      metadataKeys: Object.keys(metadata),
-      userIdType: typeof metadata.userId,
-      productIdType: typeof metadata.productId,
-      userIdLength: metadataUserId?.length ?? 0,
-      productIdLength: metadataProductId?.length ?? 0,
-    });
-
     throw new Error(
-      "Invalid Embernix purchase identifiers."
+      "Verified checkout customer email mismatch."
+    );
+  }
+
+  const orderCustomerId = getNestedId(
+    creemOrder,
+    "customer"
+  );
+
+  if (
+    orderCustomerId &&
+    orderCustomerId !== creemCustomerId
+  ) {
+    throw new Error(
+      "Creem order customer mismatch."
     );
   }
 
   const subtotalCents = amount(
-    order,
+    creemOrder,
     "sub_total"
   );
+
   const discountCents = amount(
-    order,
+    creemOrder,
     "discount_amount"
   );
+
   const taxCents = amount(
-    order,
+    creemOrder,
     "tax_amount"
   );
+
   const amountPaidCents = amount(
-    order,
+    creemOrder,
     "amount_paid"
   );
-  const currency = str(order, "currency");
+
+  const currency = str(
+    creemOrder,
+    "currency"
+  );
 
   if (
     subtotalCents === null ||
@@ -238,55 +524,16 @@ async function completeCheckout(
     amountPaidCents === null ||
     !currency
   ) {
+    console.error(
+      "Creem payment accounting fields:",
+      {
+        checkoutId,
+        orderFields: Object.keys(creemOrder),
+      }
+    );
+
     throw new Error(
       "Creem did not provide complete payment accounting."
-    );
-  }
-
-  const admin = createAdminClient();
-
-  const {
-    data: localProduct,
-    error: productError,
-  } = await admin
-    .from("products")
-    .select("id")
-    .eq("id", metadataProductId)
-    .eq("creem_product_id", creemProductId)
-    .maybeSingle();
-
-  if (productError || !localProduct) {
-    throw new Error(
-      "Creem product mapping mismatch."
-    );
-  }
-
-  const {
-    data: localOrder,
-    error: orderError,
-  } = await admin
-    .from("orders")
-    .select(
-      "id,user_id,order_number,customer_email,creem_checkout_id"
-    )
-    .eq("order_number", requestId)
-    .eq("user_id", metadataUserId)
-    .eq("creem_checkout_id", checkoutId)
-    .maybeSingle();
-
-  if (orderError || !localOrder) {
-    throw new Error(
-      "Local checkout order mismatch."
-    );
-  }
-
-  if (
-    localOrder.customer_email &&
-    localOrder.customer_email.toLowerCase() !==
-      customerEmail.toLowerCase()
-  ) {
-    throw new Error(
-      "Checkout customer email mismatch."
     );
   }
 
@@ -298,11 +545,11 @@ async function completeCheckout(
     {
       p_event_id: event.id,
       p_checkout_id: checkoutId,
-      p_order_number: requestId,
+      p_order_number: orderNumber,
       p_creem_order_id: creemOrderId,
       p_creem_customer_id: creemCustomerId,
       p_creem_product_id: creemProductId,
-      p_user_id: metadataUserId,
+      p_user_id: localUserId,
       p_subtotal_cents: subtotalCents,
       p_discount_cents: discountCents,
       p_tax_cents: taxCents,
