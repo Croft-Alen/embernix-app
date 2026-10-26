@@ -1,3 +1,4 @@
+
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
@@ -26,9 +27,16 @@ function isRecord(value: unknown): value is JsonRecord {
   );
 }
 
-function fail(error: string, status = 400) {
+function fail(
+  error: string,
+  status = 400,
+  details?: Record<string, unknown>
+) {
   return NextResponse.json(
-    { error },
+    {
+      error,
+      ...details,
+    },
     {
       status,
       headers: {
@@ -38,7 +46,9 @@ function fail(error: string, status = 400) {
   );
 }
 
-function parseReservation(value: unknown): ReservationResult {
+function parseReservation(
+  value: unknown
+): ReservationResult {
   if (!isRecord(value)) {
     throw new Error("Invalid checkout reservation response.");
   }
@@ -230,9 +240,6 @@ export async function POST(request: Request) {
       return fail("Invalid discount amount.", 409);
     }
 
-    const expectedTotalCents =
-      priceCents - discountCents;
-
     const prepared = await prepareCheckoutOrder(
       productSlug,
       true
@@ -298,64 +305,19 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      order.creem_checkout_state === null &&
-      order.creem_checkout_id === null
-    ) {
-      const { data: updated, error: accountingError } =
-        await admin
-          .from("orders")
-          .update({
-            subtotal_cents: priceCents,
-            total_cents: expectedTotalCents,
-            creem_discount_code: validatedCode,
-            creem_discount_cents: discountCents,
-            creem_tax_cents: 0,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", order.id)
-          .eq("user_id", user.id)
-          .eq("status", "pending")
-          .eq("payment_status", "unpaid")
-          .is("creem_checkout_id", null)
-          .is("creem_checkout_state", null)
-          .select("id")
-          .maybeSingle();
-
-      if (accountingError) {
-        console.error(
-          "Checkout accounting update failed:",
-          accountingError
-        );
-
-        return fail(
-          "Unable to save checkout pricing.",
-          500
-        );
-      }
-
-      if (!updated) {
-        return fail(
-          "Checkout is already being prepared. Please retry.",
-          409
-        );
-      }
-    }
-
     const claimToken = randomUUID();
 
-    const { data: rawReservation, error: reservationError } =
-      await admin.rpc(
-        "reserve_creem_checkout",
-        {
-          p_user_id: user.id,
-          p_product_id: product.id,
-          p_order_id: order.id,
-          p_discount_code: validatedCode,
-          p_discount_cents: discountCents,
-          p_claim_token: claimToken,
-        }
-      );
+    const {
+      data: rawReservation,
+      error: reservationError,
+    } = await admin.rpc("reserve_creem_checkout", {
+      p_user_id: user.id,
+      p_product_id: product.id,
+      p_order_id: order.id,
+      p_discount_code: validatedCode,
+      p_discount_cents: discountCents,
+      p_claim_token: claimToken,
+    });
 
     if (reservationError) {
       console.error(
@@ -364,7 +326,7 @@ export async function POST(request: Request) {
       );
 
       return fail(
-        "Unable to reserve checkout.",
+        "Unable to reserve checkout. Please retry.",
         500
       );
     }
@@ -392,22 +354,35 @@ export async function POST(request: Request) {
     }
 
     if (reservation.status === "creating") {
+      console.warn(
+        "Creem checkout creation already in progress:",
+        reservation.orderNumber
+      );
+
       return fail(
-        "Your checkout is already being prepared. " +
-          "Please retry shortly. If the problem persists, " +
-          "contact support before starting another payment.",
-        409
+        "An existing checkout is being prepared. " +
+          "If it was just started, try again shortly. " +
+          "If this continues, contact support and provide " +
+          "your order number. Do not start another payment.",
+        409,
+        {
+          code: "CHECKOUT_CREATING",
+          orderNumber: reservation.orderNumber,
+        }
       );
     }
 
     if (reservation.status === "conflict") {
       return fail(
-        "You already have an unpaid checkout for this " +
-          "product with different coupon settings. " +
-          "For safety, Embernix will not create a second " +
-          "payment session automatically. Contact support " +
-          "to resolve the previous checkout.",
-        409
+        "An existing unpaid checkout uses different " +
+          "coupon settings. For payment safety, the old " +
+          "session cannot be replaced automatically. " +
+          "Contact support with your order number.",
+        409,
+        {
+          code: "CHECKOUT_CONFLICT",
+          orderNumber: reservation.orderNumber,
+        }
       );
     }
 
@@ -444,41 +419,74 @@ export async function POST(request: Request) {
       order.order_number
     );
 
-    const checkout = await createCreemCheckout({
-      productId: product.creem_product_id,
-      orderNumber: order.order_number,
-      customerEmail: user.email,
-      successUrl: successUrl.toString(),
-      metadata: {
-        orderNumber: order.order_number,
-        userId: user.id,
-        productId: product.id,
-      },
-      discountCode: validatedCode,
-    });
+    let checkout: {
+      id: string;
+      checkoutUrl: string;
+    };
 
-    const { data: finalized, error: finalizeError } =
-      await admin.rpc(
-        "finalize_creem_checkout",
+    try {
+      checkout = await createCreemCheckout({
+        productId: product.creem_product_id,
+        orderNumber: order.order_number,
+        customerEmail: user.email,
+        successUrl: successUrl.toString(),
+        metadata: {
+          orderNumber: order.order_number,
+          userId: user.id,
+          productId: product.id,
+        },
+        discountCode: validatedCode,
+      });
+    } catch (error) {
+      console.error(
+        "Creem checkout creation failed after reservation:",
         {
-          p_order_id: order.id,
-          p_claim_token: claimToken,
-          p_checkout_id: checkout.id,
-          p_checkout_url: checkout.checkoutUrl,
+          orderNumber: order.order_number,
+          error,
         }
       );
 
+      return fail(
+        "We couldn't complete checkout setup. " +
+          "The order has been kept for safe recovery. " +
+          "Contact support if this persists.",
+        503,
+        {
+          code: "CHECKOUT_SETUP_FAILED",
+          orderNumber: order.order_number,
+        }
+      );
+    }
+
+    const { data: finalized, error: finalizeError } =
+      await admin.rpc("finalize_creem_checkout", {
+        p_order_id: order.id,
+        p_claim_token: claimToken,
+        p_checkout_id: checkout.id,
+        p_checkout_url: checkout.checkoutUrl,
+      });
+
     if (finalizeError || finalized !== true) {
       console.error(
-        "Creem checkout finalization failed:",
-        finalizeError
+        "Creem checkout created but finalization failed:",
+        {
+          orderNumber: order.order_number,
+          checkoutId: checkout.id,
+          error: finalizeError,
+          finalized,
+        }
       );
 
       return fail(
-        "Creem created a checkout, but Embernix could " +
-          "not save it. Contact support before attempting " +
-          "another payment.",
-        500
+        "A Creem payment session was created, but " +
+          "Embernix could not finish saving it. " +
+          "Contact support with the order number before " +
+          "attempting another payment.",
+        503,
+        {
+          code: "CHECKOUT_FINALIZATION_FAILED",
+          orderNumber: order.order_number,
+        }
       );
     }
 

@@ -20,8 +20,6 @@ import DownloadInvoiceButton from "@/components/invoices/DownloadInvoiceButton";
 
 import InvoicePaymentStatusWatcher from "@/components/invoices/InvoicePaymentStatusWatcher";
 
-import PayInvoiceButton from "@/components/invoices/PayInvoiceButton";
-
 type InvoiceDetailPageProps = {
   params: Promise<{
     id: string;
@@ -683,11 +681,7 @@ export default async function ClientInvoiceDetailPage({
               </p>
 
               <div className="mt-5">
-                <PayInvoiceButton
-                  invoiceId={
-                    invoice.id
-                  }
-                />
+                
               </div>
             </div>
           </section>

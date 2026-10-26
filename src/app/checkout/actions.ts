@@ -36,14 +36,6 @@ function createOrderNumber(): string {
   return `EMB-${date}-${random}`;
 }
 
-/**
- * Prepare an order for one digital product.
- *
- * This function never accepts a price, user ID,
- * payment status or Creem product ID from the browser.
- *
- * It does not grant ownership or confirm payment.
- */
 export async function prepareCheckoutOrder(
   productSlug: string,
   acceptedTerms: boolean
@@ -84,10 +76,7 @@ export async function prepareCheckoutOrder(
 
   const admin = createAdminClient();
 
-  const {
-    data: product,
-    error: productError,
-  } = await admin
+  const { data: product, error: productError } = await admin
     .from("products")
     .select(
       "id,slug,name,price_cents,currency,active,creem_product_id"
@@ -132,10 +121,7 @@ export async function prepareCheckoutOrder(
     };
   }
 
-  const {
-    data: ownership,
-    error: ownershipError,
-  } = await admin
+  const { data: ownership, error: ownershipError } = await admin
     .from("customer_products")
     .select("id")
     .eq("user_id", user.id)
@@ -163,25 +149,24 @@ export async function prepareCheckoutOrder(
     };
   }
 
-  // Reuse an existing, matching unpaid order only
-  // when no Creem checkout has been attached yet.
-  const {
-    data: pendingOrders,
-    error: pendingError,
-  } = await admin
-    .from("orders")
-    .select(
-      "id,order_number,currency,subtotal_cents,total_cents,creem_checkout_id"
-    )
-    .eq("user_id", user.id)
-    .eq("status", "pending")
-    .eq("payment_status", "unpaid")
-    .is("creem_checkout_id", null)
-    .order("created_at", { ascending: false })
-    .limit(20);
+  const { data: pendingOrders, error: pendingError } =
+    await admin
+      .from("orders")
+      .select(
+        "id,order_number,currency,subtotal_cents,total_cents,creem_checkout_id,creem_checkout_state,creem_checkout_claim_token,creem_discount_code,creem_discount_cents"
+      )
+      .eq("user_id", user.id)
+      .eq("payment_provider", "creem")
+      .eq("status", "pending")
+      .eq("payment_status", "unpaid")
+      .is("creem_checkout_id", null)
+      .is("creem_checkout_state", null)
+      .is("creem_checkout_claim_token", null)
+      .order("created_at", { ascending: false })
+      .limit(20);
 
   if (pendingError) {
-    console.error("Pending order lookup:", pendingError);
+    console.error("Pending order lookup failed:", pendingError);
 
     return {
       success: false,
@@ -193,7 +178,9 @@ export async function prepareCheckoutOrder(
     if (
       order.currency !== product.currency ||
       Number(order.subtotal_cents) !== price ||
-      Number(order.total_cents) !== price
+      Number(order.total_cents) !== price ||
+      order.creem_discount_code !== null ||
+      Number(order.creem_discount_cents ?? 0) !== 0
     ) {
       continue;
     }
@@ -219,18 +206,23 @@ export async function prepareCheckoutOrder(
       continue;
     }
 
+    const now = new Date().toISOString();
+
     const { data: refreshed, error: refreshError } =
       await admin
         .from("orders")
         .update({
-          terms_accepted_at: new Date().toISOString(),
+          terms_accepted_at: now,
           terms_version: TERMS_VERSION,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
         .eq("id", order.id)
+        .eq("payment_provider", "creem")
         .eq("status", "pending")
         .eq("payment_status", "unpaid")
         .is("creem_checkout_id", null)
+        .is("creem_checkout_state", null)
+        .is("creem_checkout_claim_token", null)
         .select("id")
         .maybeSingle();
 
@@ -293,7 +285,9 @@ export async function prepareCheckoutOrder(
       .delete()
       .eq("id", orderId)
       .eq("status", "pending")
-      .eq("payment_status", "unpaid");
+      .eq("payment_status", "unpaid")
+      .is("creem_checkout_state", null)
+      .is("creem_checkout_id", null);
 
     if (cleanupError) {
       console.error("Order cleanup failed:", cleanupError);
