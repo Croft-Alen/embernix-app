@@ -1,4 +1,3 @@
-
 import {
   createHmac,
   timingSafeEqual,
@@ -278,6 +277,22 @@ async function completeCheckout(
     );
   }
 
+  console.log(
+    "Creem local order identifier types:",
+    {
+      orderIdType: typeof localOrder.id,
+      userIdType: typeof localOrder.user_id,
+      orderIdLength:
+        typeof localOrder.id === "string"
+          ? localOrder.id.length
+          : null,
+      userIdLength:
+        typeof localOrder.user_id === "string"
+          ? localOrder.user_id.length
+          : null,
+    }
+  );
+
   const localOrderId = requireUuid(localOrder.id);
   const localUserId = requireUuid(localOrder.user_id);
   const orderNumber = localOrder.order_number;
@@ -315,6 +330,17 @@ async function completeCheckout(
       "Creem checkout must contain exactly one product."
     );
   }
+
+  console.log(
+    "Creem local product identifier type:",
+    {
+      productIdType: typeof items[0].product_id,
+      productIdLength:
+        typeof items[0].product_id === "string"
+          ? items[0].product_id.length
+          : null,
+    }
+  );
 
   const localProductId = requireUuid(
     items[0].product_id
