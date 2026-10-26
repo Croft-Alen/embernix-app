@@ -39,24 +39,15 @@ export default async function CheckoutPage({
 
   const admin = createAdminClient();
 
-  const {
-    data: product,
-    error: productError,
-  } = await admin
-    .from("products")
-    .select(`
-      id,
-      slug,
-      name,
-      image_url,
-      version,
-      price_cents,
-      currency,
-      active
-    `)
-    .eq("slug", productSlug)
-    .eq("active", true)
-    .maybeSingle();
+  const { data: product, error: productError } =
+    await admin
+      .from("products")
+      .select(
+        "id,slug,name,image_url,version,price_cents,currency,active"
+      )
+      .eq("slug", productSlug)
+      .eq("active", true)
+      .maybeSingle();
 
   if (productError) {
     console.error(
@@ -71,15 +62,13 @@ export default async function CheckoutPage({
     redirect("/products");
   }
 
-  const {
-    data: ownership,
-    error: ownershipError,
-  } = await admin
-    .from("customer_products")
-    .select("id,status")
-    .eq("user_id", user.id)
-    .eq("product_id", product.id)
-    .maybeSingle();
+  const { data: ownership, error: ownershipError } =
+    await admin
+      .from("customer_products")
+      .select("id,status")
+      .eq("user_id", user.id)
+      .eq("product_id", product.id)
+      .maybeSingle();
 
   if (ownershipError) {
     console.error(
@@ -94,14 +83,11 @@ export default async function CheckoutPage({
     redirect(`/products/${product.id}`);
   }
 
-  const renewalRequired =
-    ownership?.status === "renewal_required";
-
   if (
     ownership &&
-    !renewalRequired
+    ownership.status !== "renewal_required"
   ) {
-    redirect(`/products/${product.id}`);
+    redirect("/marketplace");
   }
 
   return (
@@ -118,13 +104,11 @@ export default async function CheckoutPage({
 
       <div className="mb-7 mt-6">
         <h1 className="text-2xl font-semibold text-[var(--foreground)]">
-          {renewalRequired ? "Renew License" : "Checkout"}
+          Checkout
         </h1>
 
         <p className="mt-2 text-sm text-[var(--muted)]">
-          {renewalRequired
-            ? "Complete payment to reactivate access to your digital product."
-            : "Review your digital product and complete your purchase."}
+          Review your digital product and complete your purchase.
         </p>
       </div>
 

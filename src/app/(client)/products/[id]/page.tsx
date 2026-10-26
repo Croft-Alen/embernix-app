@@ -7,7 +7,6 @@ import {
   ExternalLink,
   FileText,
   History,
-  RotateCcw,
 } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 
@@ -23,9 +22,7 @@ type ProductPageProps = {
 };
 
 function formatDate(value: string | null) {
-  if (!value) {
-    return "Unknown";
-  }
+  if (!value) return "Unknown";
 
   const date = new Date(value);
 
@@ -38,49 +35,6 @@ function formatDate(value: string | null) {
     month: "long",
     year: "numeric",
   }).format(date);
-}
-
-function formatStatus(status: string) {
-  switch (status) {
-    case "active":
-      return "Active";
-    case "revoked":
-      return "Revoked";
-    case "renewal_required":
-      return "Renewal Required";
-    case "refunded":
-      return "Refunded";
-    default:
-      return "Unavailable";
-  }
-}
-
-function statusClass(status: string) {
-  switch (status) {
-    case "active":
-      return "bg-green-50 text-green-700";
-    case "revoked":
-      return "bg-red-50 text-red-700";
-    case "renewal_required":
-      return "bg-blue-50 text-blue-700";
-    case "refunded":
-      return "bg-amber-50 text-amber-700";
-    default:
-      return "bg-gray-100 text-gray-600";
-  }
-}
-
-function accessMessage(status: string) {
-  switch (status) {
-    case "revoked":
-      return "Access to this product has been revoked. Contact support if you need assistance.";
-    case "renewal_required":
-      return "Your license requires renewal. Complete a new payment to restore product access.";
-    case "refunded":
-      return "Access to this product is unavailable because the purchase was refunded.";
-    default:
-      return null;
-  }
 }
 
 export default async function ProductPage({
@@ -103,11 +57,10 @@ export default async function ProductPage({
   const { data: ownership, error: ownershipError } =
     await supabase
       .from("customer_products")
-      .select(
-        "id,status,order_id,purchased_at"
-      )
+      .select("id,status,order_id,purchased_at")
       .eq("user_id", user.id)
       .eq("product_id", id)
+      .eq("status", "active")
       .maybeSingle();
 
   if (ownershipError || !ownership) {
@@ -134,9 +87,7 @@ export default async function ProductPage({
         "id,version,release_notes,is_current,released_at"
       )
       .eq("product_id", id)
-      .order("released_at", {
-        ascending: false,
-      });
+      .order("released_at", { ascending: false });
 
   if (versionsError) {
     console.error(
@@ -152,17 +103,7 @@ export default async function ProductPage({
     .eq("is_primary", true)
     .maybeSingle();
 
-  const isActive = ownership.status === "active";
-  const renewalRequired =
-    ownership.status === "renewal_required";
-
-  const canDownload = isActive && Boolean(productFile);
-
-  const message = accessMessage(ownership.status);
-
-  const renewalUrl = `/checkout?product=${encodeURIComponent(
-    product.slug
-  )}`;
+  const canDownload = Boolean(productFile);
 
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-5">
@@ -184,12 +125,8 @@ export default async function ProductPage({
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(
-                  ownership.status
-                )}`}
-              >
-                {formatStatus(ownership.status)}
+              <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                Active
               </span>
 
               {product.version && (
@@ -207,20 +144,6 @@ export default async function ProductPage({
               {product.short_description ||
                 "Your purchased Embernix product."}
             </p>
-
-            {message && (
-              <div
-                className={`mt-5 rounded-xl border px-4 py-3 text-sm leading-6 ${
-                  renewalRequired
-                    ? "border-blue-200 bg-blue-50 text-blue-800"
-                    : ownership.status === "refunded"
-                      ? "border-amber-200 bg-amber-50 text-amber-800"
-                      : "border-red-200 bg-red-50 text-red-800"
-                }`}
-              >
-                {message}
-              </div>
-            )}
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -232,14 +155,6 @@ export default async function ProductPage({
                 <Download className="h-4 w-4" />
                 Download
               </a>
-            ) : renewalRequired ? (
-              <Link
-                href={renewalUrl}
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Renew License
-              </Link>
             ) : (
               <button
                 type="button"
@@ -251,7 +166,7 @@ export default async function ProductPage({
               </button>
             )}
 
-            {isActive && product.documentation_url && (
+            {product.documentation_url && (
               <a
                 href={product.documentation_url}
                 target="_blank"
@@ -367,7 +282,9 @@ function InfoBlock({
     <div className="bg-[var(--surface)] p-4 sm:p-5">
       <div className="flex items-center gap-2 text-[var(--muted)]">
         <Icon className="h-4 w-4" />
-        <p className="text-xs font-medium">{label}</p>
+        <p className="text-xs font-medium">
+          {label}
+        </p>
       </div>
 
       <p className="mt-2 text-sm font-semibold text-[var(--foreground)]">
