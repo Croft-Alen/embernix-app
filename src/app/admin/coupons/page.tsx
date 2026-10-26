@@ -1,16 +1,20 @@
 import Link from "next/link";
 import {
-  AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Clock3,
-  LockKeyhole,
   Plus,
+  RefreshCw,
   TicketPercent,
   XCircle,
 } from "lucide-react";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { toggleCouponStatus } from "./actions";
+
+import {
+  syncCoupon,
+  toggleCouponStatus,
+} from "./actions";
 
 type Coupon = {
   id: string;
@@ -26,7 +30,14 @@ type Coupon = {
   created_at: string;
 };
 
-function formatDiscount(coupon: Coupon): string {
+type Props = {
+  searchParams: Promise<{
+    error?: string;
+    success?: string;
+  }>;
+};
+
+function discountLabel(coupon: Coupon): string {
   if (coupon.discount_type === "percentage") {
     return `${coupon.amount}%`;
   }
@@ -39,46 +50,42 @@ function formatDiscount(coupon: Coupon): string {
       currency,
     });
 
-const decimals =
-  formatter.resolvedOptions().maximumFractionDigits ?? 2;
+    const decimals =
+      formatter.resolvedOptions().maximumFractionDigits ?? 2;
 
-return formatter.format(coupon.amount / 10 ** decimals);
+    return formatter.format(
+      coupon.amount / 10 ** decimals
+    );
   } catch {
     return `${coupon.amount} ${currency}`;
   }
 }
 
-function formatDate(value: string | null): string {
-  if (!value) {
-    return "Never";
-  }
+function dateLabel(value: string | null): string {
+  if (!value) return "Never";
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "Invalid date";
-  }
-
-  return date.toLocaleString("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return Number.isNaN(date.getTime())
+    ? "Invalid date"
+    : date.toLocaleString("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
 }
 
-function isExpired(value: string | null): boolean {
-  if (!value) {
-    return false;
-  }
+function expired(value: string | null): boolean {
+  if (!value) return false;
 
   const time = new Date(value).getTime();
 
-  return Number.isFinite(time) && time <= Date.now();
+  return !Number.isFinite(time) || time <= Date.now();
 }
 
 function getStatus(coupon: Coupon) {
   if (!coupon.active) {
     return {
-      label: "Inactive",
+      text: "Inactive",
       className: "bg-gray-100 text-gray-600",
       Icon: XCircle,
     };
@@ -86,28 +93,31 @@ function getStatus(coupon: Coupon) {
 
   if (!coupon.creem_discount_id) {
     return {
-      label: "Needs setup",
+      text: "Needs sync",
       className: "bg-amber-50 text-amber-700",
-      Icon: AlertCircle,
+      Icon: AlertTriangle,
     };
   }
 
-  if (isExpired(coupon.expires_at)) {
+  if (expired(coupon.expires_at)) {
     return {
-      label: "Expired",
+      text: "Expired",
       className: "bg-orange-50 text-orange-700",
       Icon: Clock3,
     };
   }
 
   return {
-    label: "Active locally",
+    text: "Active locally",
     className: "bg-green-50 text-green-700",
     Icon: CheckCircle2,
   };
 }
 
-export default async function AdminCouponsPage() {
+export default async function AdminCouponsPage({
+  searchParams,
+}: Props) {
+  const query = await searchParams;
   const admin = createAdminClient();
 
   const { data, error } = await admin
@@ -119,6 +129,12 @@ export default async function AdminCouponsPage() {
 
   const coupons = (data ?? []) as Coupon[];
 
+  const successMessages: Record<string, string> = {
+    synced: "Coupon synchronized with Creem successfully.",
+    enabled: "Coupon enabled and connected to Creem.",
+    disabled: "Coupon disabled and its Creem mapping cleared.",
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -128,52 +144,65 @@ export default async function AdminCouponsPage() {
           </h1>
 
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Manage discount codes and their Creem connections.
+            Manage Embernix discounts and their Creem connections.
           </p>
         </div>
 
         <Link
           href="/admin/coupons/new"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--primary-hover)]"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white"
         >
           <Plus className="h-4 w-4" />
           Add coupon
         </Link>
       </div>
 
-      <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-800">
-        New active coupons are created in Creem automatically.
-        Existing coupons without a Creem connection need to be
-        synchronized before customers can use them.
+      {query.error && (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          {query.error}
+        </div>
+      )}
+
+      {query.success && successMessages[query.success] && (
+        <div
+          role="status"
+          className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
+        >
+          {successMessages[query.success]}
+        </div>
+      )}
+
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6 text-[var(--muted)]">
+        To change a synchronized coupon's discount rules,
+        disable it first, edit the settings, then enable it
+        again. Disabling is blocked while an active unpaid
+        checkout is using that coupon.
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
           Failed to load coupons: {error.message}
         </div>
       )}
 
       {!error && coupons.length === 0 && (
-        <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-[var(--border)] bg-white p-8">
+        <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-[var(--border)] bg-white p-8">
           <div className="text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <TicketPercent className="h-6 w-6" />
-            </div>
+            <TicketPercent className="mx-auto h-10 w-10 text-[var(--primary)]" />
 
             <h2 className="mt-4 font-semibold">
               No coupons yet
             </h2>
 
-            <p className="mt-1 text-sm text-[var(--muted)]">
+            <p className="mt-2 text-sm text-[var(--muted)]">
               Create your first discount code.
             </p>
-
-            <Link
-              href="/admin/coupons/new"
-              className="mt-5 inline-flex h-10 items-center justify-center rounded-xl bg-[var(--primary)] px-5 text-sm font-medium text-white"
-            >
-              Create coupon
-            </Link>
           </div>
         </div>
       )}
@@ -187,27 +216,21 @@ export default async function AdminCouponsPage() {
                   <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
                     Coupon
                   </th>
-
                   <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
                     Discount
                   </th>
-
                   <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
-                    Usage limit
+                    Usage
                   </th>
-
                   <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
                     Expires
                   </th>
-
                   <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
                     Creem
                   </th>
-
                   <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
                     Status
                   </th>
-
                   <th className="px-5 py-3 text-right text-xs font-semibold text-[var(--muted)]">
                     Actions
                   </th>
@@ -219,20 +242,15 @@ export default async function AdminCouponsPage() {
                   const status = getStatus(coupon);
                   const StatusIcon = status.Icon;
 
-                  const canEnable =
-                    !coupon.active &&
-                    !coupon.creem_discount_id;
-
-                  const canDisable =
-                    coupon.active &&
-                    !coupon.creem_discount_id;
-
-                  const canToggle = canEnable || canDisable;
-
-                  const toggleAction = toggleCouponStatus.bind(
+                  const toggle = toggleCouponStatus.bind(
                     null,
                     coupon.id,
                     !coupon.active
+                  );
+
+                  const sync = syncCoupon.bind(
+                    null,
+                    coupon.id
                   );
 
                   return (
@@ -253,24 +271,23 @@ export default async function AdminCouponsPage() {
                       </td>
 
                       <td className="px-5 py-4 text-sm font-medium">
-                        {formatDiscount(coupon)}
+                        {discountLabel(coupon)}
                       </td>
 
                       <td className="px-5 py-4 text-sm text-[var(--muted)]">
-                        {coupon.usage_limit
-                          ? `Max ${coupon.usage_limit}`
-                          : "Unlimited"}
+                        {coupon.usage_limit === null
+                          ? "Unlimited"
+                          : `Max ${coupon.usage_limit}`}
                       </td>
 
                       <td className="whitespace-nowrap px-5 py-4 text-sm text-[var(--muted)]">
-                        {formatDate(coupon.expires_at)}
+                        {dateLabel(coupon.expires_at)}
                       </td>
 
                       <td className="px-5 py-4">
                         {coupon.creem_discount_id ? (
                           <div>
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
                               Mapped
                             </span>
 
@@ -282,8 +299,7 @@ export default async function AdminCouponsPage() {
                             </p>
                           </div>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                            <AlertCircle className="h-3.5 w-3.5" />
+                          <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
                             Not mapped
                           </span>
                         )}
@@ -294,7 +310,7 @@ export default async function AdminCouponsPage() {
                           className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${status.className}`}
                         >
                           <StatusIcon className="h-3.5 w-3.5" />
-                          {status.label}
+                          {status.text}
                         </span>
                       </td>
 
@@ -302,31 +318,34 @@ export default async function AdminCouponsPage() {
                         <div className="flex justify-end gap-2">
                           <Link
                             href={`/admin/coupons/${coupon.id}/edit`}
-                            className="inline-flex h-9 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+                            className="inline-flex h-9 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium hover:bg-[var(--surface-hover)]"
                           >
                             Edit
                           </Link>
 
-                          {canToggle ? (
-                            <form action={toggleAction}>
-                              <button
-                                type="submit"
-                                className="inline-flex h-9 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
-                              >
-                                {coupon.active
-                                  ? "Disable"
-                                  : "Enable"}
-                              </button>
-                            </form>
-                          ) : (
-                            <span
-                              title="Status changes for mapped coupons require Creem synchronization."
-                              className="inline-flex h-9 cursor-not-allowed items-center gap-1.5 rounded-xl border border-[var(--border)] bg-gray-50 px-3 text-xs text-[var(--muted)]"
+                          {coupon.active &&
+                            !coupon.creem_discount_id && (
+                              <form action={sync}>
+                                <button
+                                  type="submit"
+                                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 text-sm font-medium hover:bg-[var(--surface-hover)]"
+                                >
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                  Sync
+                                </button>
+                              </form>
+                            )}
+
+                          <form action={toggle}>
+                            <button
+                              type="submit"
+                              className="inline-flex h-9 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium hover:bg-[var(--surface-hover)]"
                             >
-                              <LockKeyhole className="h-3.5 w-3.5" />
-                              Locked
-                            </span>
-                          )}
+                              {coupon.active
+                                ? "Disable"
+                                : "Enable"}
+                            </button>
+                          </form>
                         </div>
                       </td>
                     </tr>
@@ -339,9 +358,8 @@ export default async function AdminCouponsPage() {
       )}
 
       <p className="text-xs text-[var(--muted)]">
-        A saved Creem mapping does not guarantee the remote
-        discount is currently valid. Checkout validation
-        performs an additional check.
+        Mapping status is local. Checkout performs a separate
+        verification against Creem before accepting a coupon.
       </p>
     </div>
   );
