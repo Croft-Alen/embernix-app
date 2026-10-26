@@ -5,6 +5,30 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { validateCheckoutCoupon } from "@/lib/creem/validate-coupon";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type CouponRequest = {
+  code?: unknown;
+  productSlug?: unknown;
+};
+
+function errorResponse(
+  message: string,
+  status: number
+) {
+  return NextResponse.json(
+    {
+      valid: false,
+      error: message,
+    },
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    }
+  );
+}
 
 export async function POST(request: Request) {
   try {
@@ -12,12 +36,13 @@ export async function POST(request: Request) {
 
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "Please sign in." },
-        { status: 401 }
+    if (authError || !user) {
+      return errorResponse(
+        "Please sign in to apply a coupon.",
+        401
       );
     }
 
@@ -30,13 +55,10 @@ export async function POST(request: Request) {
       typeof body !== "object" ||
       Array.isArray(body)
     ) {
-      return NextResponse.json(
-        { error: "Invalid request." },
-        { status: 400 }
-      );
+      return errorResponse("Invalid request.", 400);
     }
 
-    const payload = body as Record<string, unknown>;
+    const payload = body as CouponRequest;
 
     const code =
       typeof payload.code === "string"
@@ -48,38 +70,60 @@ export async function POST(request: Request) {
         ? payload.productSlug.trim()
         : "";
 
-    if (
-      !/^[A-Z0-9]{1,32}$/.test(code) ||
-      !/^[a-zA-Z0-9_-]{1,200}$/.test(slug)
-    ) {
-      return NextResponse.json(
-        { error: "Invalid coupon or product." },
-        { status: 400 }
+    if (!/^[A-Z0-9]{1,32}$/.test(code)) {
+      return errorResponse(
+        "Enter a valid coupon code.",
+        400
+      );
+    }
+
+    if (!/^[a-zA-Z0-9_-]{1,200}$/.test(slug)) {
+      return errorResponse(
+        "Invalid product.",
+        400
       );
     }
 
     const admin = createAdminClient();
 
-    const { data: product, error } = await admin
-      .from("products")
-      .select(
-        "id,price_cents,currency,creem_product_id"
-      )
-      .eq("slug", slug)
-      .eq("active", true)
-      .maybeSingle();
+    const { data: product, error: productError } =
+      await admin
+        .from("products")
+        .select(
+          "id,price_cents,currency,creem_product_id"
+        )
+        .eq("slug", slug)
+        .eq("active", true)
+        .maybeSingle();
 
-    if (error) {
-      return NextResponse.json(
-        { error: "Unable to load product." },
-        { status: 500 }
+    if (productError) {
+      console.error(
+        "Coupon product lookup failed:",
+        productError
+      );
+
+      return errorResponse(
+        "Unable to load product.",
+        500
       );
     }
 
-    if (!product?.creem_product_id) {
-      return NextResponse.json(
-        { error: "Product unavailable." },
-        { status: 404 }
+    if (!product || !product.creem_product_id) {
+      return errorResponse(
+        "Product unavailable.",
+        404
+      );
+    }
+
+    const priceCents = Number(product.price_cents);
+
+    if (
+      !Number.isSafeInteger(priceCents) ||
+      priceCents <= 0
+    ) {
+      return errorResponse(
+        "Product pricing is unavailable.",
+        400
       );
     }
 
@@ -87,34 +131,41 @@ export async function POST(request: Request) {
       code,
       productId: product.id,
       creemProductId: product.creem_product_id,
-      productPriceCents: Number(product.price_cents),
+      productPriceCents: priceCents,
       currency: product.currency,
     });
 
-    return NextResponse.json({
-      valid: true,
-
-      coupon: {
-        code: coupon.code,
-        description: coupon.description,
-        discountType: coupon.discountType,
-        amount: coupon.amount,
-        currency: coupon.currency,
-      },
-
-      subtotalCents: Number(product.price_cents),
-      discountCents: coupon.discountCents,
-      totalCents: coupon.totalCents,
-    });
-  } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not validate coupon.",
+        valid: true,
+        coupon: {
+          code: coupon.code,
+          description: coupon.description,
+          discountType: coupon.discountType,
+          amount: coupon.amount,
+          currency: coupon.currency,
+        },
+        subtotalCents: priceCents,
+        discountCents: coupon.discountCents,
+        totalCents: coupon.totalCents,
       },
-      { status: 400 }
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Coupon validation failed:",
+      error instanceof Error ? error.message : error
+    );
+
+    return errorResponse(
+      error instanceof Error
+        ? error.message
+        : "Unable to validate coupon.",
+      400
     );
   }
 }

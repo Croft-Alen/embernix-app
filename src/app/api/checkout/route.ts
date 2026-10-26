@@ -1,6 +1,4 @@
-
 import { randomUUID } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
 import { prepareCheckoutOrder } from "@/app/checkout/actions";
@@ -31,13 +29,16 @@ function isRecord(value: unknown): value is JsonRecord {
 function fail(error: string, status = 400) {
   return NextResponse.json(
     { error },
-    { status }
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    }
   );
 }
 
-function parseReservation(
-  value: unknown
-): ReservationResult {
+function parseReservation(value: unknown): ReservationResult {
   if (!isRecord(value)) {
     throw new Error("Invalid checkout reservation response.");
   }
@@ -84,9 +85,8 @@ function requireCheckoutUrl(value: string): string {
 
 export async function POST(request: Request) {
   try {
-    const body: unknown = await request
-      .json()
-      .catch(() => null);
+    const body: unknown =
+      await request.json().catch(() => null);
 
     if (!isRecord(body)) {
       return fail("Invalid checkout request.");
@@ -102,9 +102,7 @@ export async function POST(request: Request) {
         ? body.couponCode.trim().toUpperCase()
         : "";
 
-    if (
-      !/^[a-zA-Z0-9_-]{1,200}$/.test(productSlug)
-    ) {
+    if (!/^[a-zA-Z0-9_-]{1,200}$/.test(productSlug)) {
       return fail("Invalid digital product.");
     }
 
@@ -134,21 +132,19 @@ export async function POST(request: Request) {
 
     const admin = createAdminClient();
 
-    const {
-      data: product,
-      error: productError,
-    } = await admin
-      .from("products")
-      .select(
-        "id,slug,name,price_cents,currency,active,creem_product_id"
-      )
-      .eq("slug", productSlug)
-      .eq("active", true)
-      .maybeSingle();
+    const { data: product, error: productError } =
+      await admin
+        .from("products")
+        .select(
+          "id,slug,name,price_cents,currency,active,creem_product_id"
+        )
+        .eq("slug", productSlug)
+        .eq("active", true)
+        .maybeSingle();
 
     if (productError) {
       console.error(
-        "Creem product lookup:",
+        "Creem product lookup failed:",
         productError
       );
 
@@ -180,16 +176,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const {
-      data: ownership,
-      error: ownershipError,
-    } = await admin
-      .from("customer_products")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("product_id", product.id)
-      .eq("status", "active")
-      .maybeSingle();
+    const { data: ownership, error: ownershipError } =
+      await admin
+        .from("customer_products")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("product_id", product.id)
+        .eq("status", "active")
+        .maybeSingle();
 
     if (ownershipError) {
       return fail(
@@ -254,17 +248,15 @@ export async function POST(request: Request) {
       return fail(prepared.error);
     }
 
-    const {
-      data: order,
-      error: orderError,
-    } = await admin
-      .from("orders")
-      .select(
-        "id,user_id,order_number,status,payment_status,payment_provider,currency,subtotal_cents,total_cents,creem_checkout_id,creem_checkout_state"
-      )
-      .eq("order_number", prepared.orderNumber)
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const { data: order, error: orderError } =
+      await admin
+        .from("orders")
+        .select(
+          "id,user_id,order_number,status,payment_status,payment_provider,currency,subtotal_cents,total_cents,creem_checkout_id,creem_checkout_state"
+        )
+        .eq("order_number", prepared.orderNumber)
+        .eq("user_id", user.id)
+        .maybeSingle();
 
     if (orderError || !order) {
       return fail("Checkout order not found.", 500);
@@ -281,15 +273,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const {
-      data: items,
-      error: itemsError,
-    } = await admin
-      .from("order_items")
-      .select(
-        "item_type,product_id,quantity,unit_price_cents"
-      )
-      .eq("order_id", order.id);
+    const { data: items, error: itemsError } =
+      await admin
+        .from("order_items")
+        .select(
+          "item_type,product_id,quantity,unit_price_cents"
+        )
+        .eq("order_id", order.id);
 
     if (
       itemsError ||
@@ -308,40 +298,33 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * Existing checkout attempts may already be
-     * reserved. Only a new/unreserved order may
-     * receive updated discount accounting.
-     */
     if (
       order.creem_checkout_state === null &&
       order.creem_checkout_id === null
     ) {
-      const {
-        data: updated,
-        error: accountingError,
-      } = await admin
-        .from("orders")
-        .update({
-          subtotal_cents: priceCents,
-          total_cents: expectedTotalCents,
-          creem_discount_code: validatedCode,
-          creem_discount_cents: discountCents,
-          creem_tax_cents: 0,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", order.id)
-        .eq("user_id", user.id)
-        .eq("status", "pending")
-        .eq("payment_status", "unpaid")
-        .is("creem_checkout_id", null)
-        .is("creem_checkout_state", null)
-        .select("id")
-        .maybeSingle();
+      const { data: updated, error: accountingError } =
+        await admin
+          .from("orders")
+          .update({
+            subtotal_cents: priceCents,
+            total_cents: expectedTotalCents,
+            creem_discount_code: validatedCode,
+            creem_discount_cents: discountCents,
+            creem_tax_cents: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id)
+          .eq("user_id", user.id)
+          .eq("status", "pending")
+          .eq("payment_status", "unpaid")
+          .is("creem_checkout_id", null)
+          .is("creem_checkout_state", null)
+          .select("id")
+          .maybeSingle();
 
       if (accountingError) {
         console.error(
-          "Checkout pricing update:",
+          "Checkout accounting update failed:",
           accountingError
         );
 
@@ -361,24 +344,22 @@ export async function POST(request: Request) {
 
     const claimToken = randomUUID();
 
-    const {
-      data: rawReservation,
-      error: reservationError,
-    } = await admin.rpc(
-      "reserve_creem_checkout",
-      {
-        p_user_id: user.id,
-        p_product_id: product.id,
-        p_order_id: order.id,
-        p_discount_code: validatedCode,
-        p_discount_cents: discountCents,
-        p_claim_token: claimToken,
-      }
-    );
+    const { data: rawReservation, error: reservationError } =
+      await admin.rpc(
+        "reserve_creem_checkout",
+        {
+          p_user_id: user.id,
+          p_product_id: product.id,
+          p_order_id: order.id,
+          p_discount_code: validatedCode,
+          p_discount_cents: discountCents,
+          p_claim_token: claimToken,
+        }
+      );
 
     if (reservationError) {
       console.error(
-        "Checkout reservation failed:",
+        "Creem checkout reservation failed:",
         reservationError
       );
 
@@ -388,8 +369,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const reservation =
-      parseReservation(rawReservation);
+    const reservation = parseReservation(rawReservation);
 
     if (reservation.status === "ready") {
       if (
@@ -414,17 +394,19 @@ export async function POST(request: Request) {
     if (reservation.status === "creating") {
       return fail(
         "Your checkout is already being prepared. " +
-          "Do not submit another payment. " +
-          "If this message persists, contact support.",
+          "Please retry shortly. If the problem persists, " +
+          "contact support before starting another payment.",
         409
       );
     }
 
     if (reservation.status === "conflict") {
       return fail(
-        "An existing checkout uses different pricing " +
-          "or a different coupon. Complete that " +
-          "checkout or contact support.",
+        "You already have an unpaid checkout for this " +
+          "product with different coupon settings. " +
+          "For safety, Embernix will not create a second " +
+          "payment session automatically. Contact support " +
+          "to resolve the previous checkout.",
         409
       );
     }
@@ -462,10 +444,6 @@ export async function POST(request: Request) {
       order.order_number
     );
 
-    /*
-     * Only the request that reserved the order
-     * is permitted to create a Creem checkout.
-     */
     const checkout = await createCreemCheckout({
       productId: product.creem_product_id,
       orderNumber: order.order_number,
@@ -479,18 +457,16 @@ export async function POST(request: Request) {
       discountCode: validatedCode,
     });
 
-    const {
-      data: finalized,
-      error: finalizeError,
-    } = await admin.rpc(
-      "finalize_creem_checkout",
-      {
-        p_order_id: order.id,
-        p_claim_token: claimToken,
-        p_checkout_id: checkout.id,
-        p_checkout_url: checkout.checkoutUrl,
-      }
-    );
+    const { data: finalized, error: finalizeError } =
+      await admin.rpc(
+        "finalize_creem_checkout",
+        {
+          p_order_id: order.id,
+          p_claim_token: claimToken,
+          p_checkout_id: checkout.id,
+          p_checkout_url: checkout.checkoutUrl,
+        }
+      );
 
     if (finalizeError || finalized !== true) {
       console.error(
@@ -498,16 +474,10 @@ export async function POST(request: Request) {
         finalizeError
       );
 
-      /*
-       * Do not automatically create another
-       * checkout after this failure.
-       *
-       * The remote session may already exist.
-       */
       return fail(
-        "Creem created a checkout, but Embernix " +
-          "could not save it. Please contact support " +
-          "before trying another payment.",
+        "Creem created a checkout, but Embernix could " +
+          "not save it. Contact support before attempting " +
+          "another payment.",
         500
       );
     }
@@ -526,8 +496,8 @@ export async function POST(request: Request) {
     );
 
     return fail(
-      "Unable to prepare checkout. " +
-        "Check your existing order before retrying.",
+      "Unable to prepare checkout. Check your existing " +
+        "order before retrying.",
       500
     );
   }

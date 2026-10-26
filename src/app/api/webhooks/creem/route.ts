@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+
+import { getCreemTransaction } from "@/lib/creem/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -56,7 +58,10 @@ async function getCheckout(checkoutId: string): Promise<Data> {
   const key = process.env.CREEM_API_KEY;
   const environment = process.env.CREEM_ENVIRONMENT;
 
-  if (!key || !["test", "production"].includes(environment ?? "")) {
+  if (
+    !key ||
+    (environment !== "test" && environment !== "production")
+  ) {
     throw new Error("Creem API configuration is incomplete.");
   }
 
@@ -93,7 +98,8 @@ async function getCheckout(checkoutId: string): Promise<Data> {
     throw new Error("Checkout has not been completed.");
   }
 
-  const expectedMode = environment === "test" ? "test" : "prod";
+  const expectedMode =
+    environment === "test" ? "test" : "prod";
 
   if (
     checkout.mode &&
@@ -104,6 +110,135 @@ async function getCheckout(checkoutId: string): Promise<Data> {
   }
 
   return checkout;
+}
+
+type PaymentTotals = {
+  subtotal: number;
+  discount: number;
+  tax: number;
+  paid: number;
+};
+
+async function verifyPaymentTotals(input: {
+  checkout: Data;
+  order: Data;
+  orderId: string;
+  customerId: string;
+  currency: string;
+  localSubtotal: number;
+  localDiscount: number;
+}): Promise<PaymentTotals> {
+  const {
+    checkout,
+    order,
+    orderId,
+    customerId,
+    currency,
+    localSubtotal,
+    localDiscount,
+  } = input;
+
+  if (
+    !Number.isSafeInteger(localSubtotal) ||
+    localSubtotal <= 0 ||
+    !Number.isSafeInteger(localDiscount) ||
+    localDiscount < 0 ||
+    localDiscount > localSubtotal
+  ) {
+    throw new Error("Invalid original order accounting.");
+  }
+
+  const transactionId =
+    idOf(order.transaction) ??
+    idOf(checkout.transaction);
+
+  if (transactionId) {
+    const transaction = await getCreemTransaction(transactionId);
+
+    if (
+      transaction.orderId !== orderId ||
+      (transaction.customerId &&
+        transaction.customerId !== customerId) ||
+      transaction.currency !== currency ||
+      transaction.status !== "paid" ||
+      transaction.type !== "payment"
+    ) {
+      throw new Error("Creem transaction does not match the order.");
+    }
+
+    const discount = transaction.discountAmount;
+    const tax = transaction.taxAmount;
+    const paid = transaction.amountPaid;
+
+    if (discount !== localDiscount) {
+      throw new Error("Creem discount mismatch.");
+    }
+
+    const expectedPaid = localSubtotal - discount + tax;
+
+    if (
+      !Number.isSafeInteger(expectedPaid) ||
+      expectedPaid < 0 ||
+      expectedPaid !== paid
+    ) {
+      throw new Error("Creem transaction total mismatch.");
+    }
+
+    const expectedNet = localSubtotal - discount;
+
+    if (
+      transaction.amount !== localSubtotal &&
+      transaction.amount !== expectedNet
+    ) {
+      throw new Error("Creem transaction amount mismatch.");
+    }
+
+    const checkoutAmount = cents(order.amount);
+
+    if (
+      checkoutAmount !== null &&
+      checkoutAmount !== localSubtotal &&
+      checkoutAmount !== expectedNet
+    ) {
+      throw new Error("Creem order amount mismatch.");
+    }
+
+    return {
+      subtotal: localSubtotal,
+      discount,
+      tax,
+      paid,
+    };
+  }
+
+  if (localDiscount !== 0) {
+    throw new Error(
+      "Discounted checkout requires a verified Creem transaction."
+    );
+  }
+
+  const checkoutAmount = cents(order.amount);
+  const orderDiscount = cents(order.discount_amount);
+  const orderTax = cents(order.tax_amount);
+  const orderPaid = cents(order.amount_paid);
+
+  if (
+    checkoutAmount !== localSubtotal ||
+    (orderDiscount !== null && orderDiscount !== 0) ||
+    (orderTax !== null && orderTax !== 0) ||
+    (orderPaid !== null && orderPaid !== localSubtotal)
+  ) {
+    throw new Error(
+      "Checkout requires complete transaction details."
+    );
+  }
+
+  return {
+    subtotal: localSubtotal,
+    discount: 0,
+    tax: 0,
+    paid: localSubtotal,
+  };
 }
 
 async function fulfill(
@@ -157,7 +292,9 @@ async function fulfill(
   const customer = asObject(checkout.customer);
 
   if (!order || !checkoutProduct || !customer) {
-    throw new Error("Completed checkout is missing purchase details.");
+    throw new Error(
+      "Completed checkout is missing purchase details."
+    );
   }
 
   const orderId = text(order.id);
@@ -180,7 +317,9 @@ async function fulfill(
       orderType !== "onetime" &&
       orderType !== "one_time")
   ) {
-    throw new Error("Creem has not verified a one-time paid order.");
+    throw new Error(
+      "Creem has not verified a one-time paid order."
+    );
   }
 
   if (
@@ -193,7 +332,9 @@ async function fulfill(
       idOf(order.customer) !== customerId) ||
     currency !== String(localOrder.currency).toUpperCase()
   ) {
-    throw new Error("Creem checkout does not match the local order.");
+    throw new Error(
+      "Creem checkout does not match the local order."
+    );
   }
 
   if (
@@ -218,71 +359,15 @@ async function fulfill(
     throw new Error("Checkout metadata mismatch.");
   }
 
-  const subtotal = Number(localOrder.subtotal_cents);
-  const localDiscount = Number(
-    localOrder.creem_discount_cents
-  );
-
-  const creemAmount = cents(order.amount);
-  const creemDiscount = cents(order.discount_amount);
-  const creemTax = cents(order.tax_amount);
-  const creemPaid = cents(order.amount_paid);
-
-  if (
-    !Number.isSafeInteger(subtotal) ||
-    subtotal <= 0 ||
-    !Number.isSafeInteger(localDiscount) ||
-    localDiscount < 0 ||
-    localDiscount > subtotal ||
-    creemAmount === null ||
-    creemAmount !== subtotal
-  ) {
-    throw new Error("Creem base price mismatch.");
-  }
-
-  let discount: number;
-  let tax: number;
-  let paid: number;
-
-  if (
-    creemPaid !== null &&
-    creemDiscount !== null
-  ) {
-    discount = creemDiscount;
-    paid = creemPaid;
-
-    const calculatedTax =
-      paid - subtotal + discount;
-
-    if (
-      !Number.isSafeInteger(calculatedTax) ||
-      calculatedTax < 0 ||
-      (creemTax !== null && creemTax !== calculatedTax)
-    ) {
-      throw new Error("Creem payment totals do not reconcile.");
-    }
-
-    tax = calculatedTax;
-  } else {
-    if (
-      localDiscount !== 0 ||
-      creemDiscount !== null && creemDiscount !== 0 ||
-      creemTax !== null && creemTax !== 0 ||
-      creemPaid !== null && creemPaid !== subtotal
-    ) {
-      throw new Error(
-        "Coupon or tax checkout requires complete paid amount details."
-      );
-    }
-
-    discount = 0;
-    tax = 0;
-    paid = creemAmount;
-  }
-
-  if (discount !== localDiscount) {
-    throw new Error("Creem discount mismatch.");
-  }
+  const verified = await verifyPaymentTotals({
+    checkout,
+    order,
+    orderId,
+    customerId,
+    currency,
+    localSubtotal: Number(localOrder.subtotal_cents),
+    localDiscount: Number(localOrder.creem_discount_cents),
+  });
 
   const { data: result, error: fulfillmentError } =
     await admin.rpc("complete_creem_product_checkout_v2", {
@@ -293,19 +378,27 @@ async function fulfill(
       p_creem_customer_id: customerId,
       p_creem_product_id: creemProductId,
       p_user_id: localOrder.user_id,
-      p_subtotal_cents: subtotal,
-      p_discount_cents: discount,
-      p_tax_cents: tax,
-      p_amount_paid_cents: paid,
+      p_subtotal_cents: verified.subtotal,
+      p_discount_cents: verified.discount,
+      p_tax_cents: verified.tax,
+      p_amount_paid_cents: verified.paid,
       p_currency: currency,
     });
 
   if (fulfillmentError) {
-    console.error("Creem fulfillment database error:", fulfillmentError);
+    console.error(
+      "Creem fulfillment database error:",
+      fulfillmentError
+    );
+
     throw new Error("Database fulfillment failed.");
   }
 
-  if (!["completed", "duplicate", "already_paid"].includes(result)) {
+  if (
+    result !== "completed" &&
+    result !== "duplicate" &&
+    result !== "already_paid"
+  ) {
     throw new Error("Unexpected fulfillment result.");
   }
 
@@ -369,10 +462,13 @@ export async function POST(request: Request) {
       event.eventType === "refund.created" ||
       event.eventType === "dispute.created"
     ) {
-      console.error("Creem payment reversal needs review:", {
-        eventId: event.id,
-        eventType: event.eventType,
-      });
+      console.error(
+        "Creem payment reversal requires review:",
+        {
+          eventId: event.id,
+          eventType: event.eventType,
+        }
+      );
     }
 
     return NextResponse.json({
@@ -382,11 +478,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const checkout = event.object as Data;
-    const checkoutId = text(checkout.id);
+    const payload = event.object as Data;
+    const checkoutId = text(payload.id);
 
     if (!checkoutId) {
-      throw new Error("Missing Creem checkout ID.");
+      throw new Error("Missing checkout ID.");
     }
 
     const result = await fulfill(
@@ -399,10 +495,15 @@ export async function POST(request: Request) {
       result,
     });
   } catch (error) {
-    console.error("Creem webhook processing failed:", error);
+    console.error(
+      "Creem webhook processing failed:",
+      error
+    );
 
     return NextResponse.json(
-      { error: "Payment verification or fulfillment failed." },
+      {
+        error: "Payment verification or fulfillment failed.",
+      },
       { status: 500 }
     );
   }

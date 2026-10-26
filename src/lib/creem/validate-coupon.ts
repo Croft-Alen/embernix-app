@@ -13,17 +13,50 @@ export type ValidatedCoupon = {
   totalCents: number;
 };
 
-export async function validateCheckoutCoupon(input: {
+type ValidateCheckoutCouponInput = {
   code: string;
   productId: string;
   creemProductId: string;
   productPriceCents: number;
   currency: string;
-}): Promise<ValidatedCoupon> {
+};
+
+function isExpired(value: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const time = new Date(value).getTime();
+
+  return !Number.isFinite(time) || time <= Date.now();
+}
+
+export async function validateCheckoutCoupon(
+  input: ValidateCheckoutCouponInput
+): Promise<ValidatedCoupon> {
   const code = input.code.trim().toUpperCase();
+  const currency = input.currency.trim().toUpperCase();
 
   if (!/^[A-Z0-9]{1,32}$/.test(code)) {
     throw new Error("Invalid coupon code.");
+  }
+
+  if (
+    !input.productId ||
+    !/^prod_[A-Za-z0-9_-]+$/.test(input.creemProductId)
+  ) {
+    throw new Error("Invalid product.");
+  }
+
+  if (
+    !Number.isSafeInteger(input.productPriceCents) ||
+    input.productPriceCents <= 0
+  ) {
+    throw new Error("Invalid product price.");
+  }
+
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    throw new Error("Invalid product currency.");
   }
 
   const admin = createAdminClient();
@@ -40,14 +73,15 @@ export async function validateCheckoutCoupon(input: {
     throw new Error("Unable to check coupon.");
   }
 
-  if (!coupon || !coupon.active || !coupon.creem_discount_id) {
+  if (
+    !coupon ||
+    !coupon.active ||
+    !coupon.creem_discount_id
+  ) {
     throw new Error("Coupon is not available.");
   }
 
-  if (
-    coupon.expires_at &&
-    new Date(coupon.expires_at).getTime() <= Date.now()
-  ) {
+  if (isExpired(coupon.expires_at)) {
     throw new Error("Coupon has expired.");
   }
 
@@ -64,50 +98,84 @@ export async function validateCheckoutCoupon(input: {
     throw new Error("Invalid coupon value.");
   }
 
-  const creem = await getCreemDiscountByCode(code);
+  let creem;
+
+  try {
+    creem = await getCreemDiscountByCode(code);
+  } catch {
+    throw new Error(
+      "Unable to verify this coupon with Creem."
+    );
+  }
 
   if (
     creem.id !== coupon.creem_discount_id ||
     creem.code.toUpperCase() !== code ||
     creem.status !== "active"
   ) {
-    throw new Error("Coupon is not active in Creem.");
-  }
-
-  if (!creem.products.includes(input.creemProductId)) {
-    throw new Error("Coupon does not apply to this product.");
+    throw new Error(
+      "Coupon is not active or synchronized with Creem."
+    );
   }
 
   if (
-    creem.expiryDate &&
-    new Date(creem.expiryDate).getTime() <= Date.now()
+    !creem.products.includes(input.creemProductId)
   ) {
+    throw new Error(
+      "Coupon does not apply to this product."
+    );
+  }
+
+  if (isExpired(creem.expiryDate)) {
     throw new Error("Coupon has expired in Creem.");
+  }
+
+  if (
+    creem.maxRedemptions !== null &&
+    (
+      !Number.isSafeInteger(creem.maxRedemptions) ||
+      creem.maxRedemptions <= 0
+    )
+  ) {
+    throw new Error("Invalid Creem redemption limit.");
+  }
+
+  if (
+    !Number.isSafeInteger(creem.redeemCount) ||
+    creem.redeemCount < 0
+  ) {
+    throw new Error("Invalid Creem redemption count.");
   }
 
   if (
     creem.maxRedemptions !== null &&
     creem.redeemCount >= creem.maxRedemptions
   ) {
-    throw new Error("Coupon redemption limit reached.");
+    throw new Error(
+      "Coupon redemption limit has been reached."
+    );
   }
 
   if (
     coupon.usage_limit !== null &&
     Number(coupon.usage_limit) !== creem.maxRedemptions
   ) {
-    throw new Error("Coupon usage limits do not match Creem.");
+    throw new Error(
+      "Coupon usage limit is not synchronized with Creem."
+    );
   }
 
   let discountCents: number;
 
   if (coupon.discount_type === "percentage") {
     if (
+      amount > 100 ||
       creem.type !== "percentage" ||
-      creem.percentage !== amount ||
-      amount > 100
+      creem.percentage !== amount
     ) {
-      throw new Error("Coupon percentage does not match Creem.");
+      throw new Error(
+        "Coupon percentage does not match Creem."
+      );
     }
 
     discountCents = Math.round(
@@ -117,27 +185,27 @@ export async function validateCheckoutCoupon(input: {
     if (
       creem.type !== "fixed" ||
       creem.amount !== amount ||
-      creem.currency?.toUpperCase() !==
-        input.currency.toUpperCase() ||
-      String(coupon.currency).toUpperCase() !==
-        input.currency.toUpperCase()
+      coupon.currency?.toUpperCase() !== currency ||
+      creem.currency?.toUpperCase() !== currency
     ) {
-      throw new Error("Coupon amount or currency does not match Creem.");
+      throw new Error(
+        "Coupon amount or currency does not match Creem."
+      );
     }
 
     discountCents = amount;
   }
 
   if (
-    !Number.isSafeInteger(input.productPriceCents) ||
-    input.productPriceCents <= 0
+    !Number.isSafeInteger(discountCents) ||
+    discountCents <= 0
   ) {
-    throw new Error("Invalid product price.");
+    throw new Error("Invalid calculated discount.");
   }
 
   discountCents = Math.min(
-    input.productPriceCents,
-    discountCents
+    discountCents,
+    input.productPriceCents
   );
 
   return {
@@ -147,7 +215,6 @@ export async function validateCheckoutCoupon(input: {
     amount,
     currency: coupon.currency,
     discountCents,
-    totalCents:
-      input.productPriceCents - discountCents,
+    totalCents: input.productPriceCents - discountCents,
   };
 }

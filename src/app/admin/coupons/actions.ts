@@ -1,629 +1,567 @@
 "use server";
 
-import {
-  revalidatePath,
-} from "next/cache";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
-import {
-  redirect,
-} from "next/navigation";
+import { createCreemDiscount } from "@/lib/creem/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
-import {
-  createAdminClient,
-} from "@/lib/supabase/admin";
+type DiscountType = "percentage" | "flat";
 
-import {
-  createClient,
-} from "@/lib/supabase/server";
+type CouponData = {
+  code: string;
+  description: string | null;
+  discount_type: DiscountType;
+  amount: number;
+  currency: string | null;
+  active: boolean;
+  expires_at: string | null;
+  usage_limit: number | null;
+};
 
-type EmbernixDiscountType = "percentage" | "flat";
+type StoredCoupon = CouponData & {
+  id: string;
+  creem_discount_id: string | null;
+};
 
-/* =========================================================
-   HELPERS
-========================================================= */
-
-function cleanString(
-  value:
-    | FormDataEntryValue
-    | null
-) {
-  return String(
-    value ?? ""
-  ).trim();
+function value(entry: FormDataEntryValue | null): string {
+  return String(entry ?? "").trim();
 }
 
-function nullableString(
-  value:
-    | FormDataEntryValue
-    | null
-) {
-  const valueString =
-    cleanString(value);
-
-  return valueString ||
-    null;
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Unable to process coupon.";
 }
 
-function parseBoolean(
-  value:
-    | FormDataEntryValue
-    | null
-) {
-  const parsed =
-    cleanString(value);
+function fail(path: string, message: string): never {
+  const params = new URLSearchParams({ error: message });
+  redirect(`${path}?${params}`);
+}
 
-  return (
-    parsed === "true" ||
-    parsed === "1" ||
-    parsed === "on"
+function positiveInteger(text: string): number | null {
+  if (!/^\d+$/.test(text)) return null;
+  const parsed = Number(text);
+
+  return Number.isSafeInteger(parsed) && parsed > 0
+    ? parsed
+    : null;
+}
+
+function decimalPlaces(currency: string): number {
+  try {
+    const places =
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+      }).resolvedOptions().maximumFractionDigits ?? 2;
+
+    if (!Number.isInteger(places) || places < 0 || places > 3) {
+      throw new Error("Unsupported currency precision.");
+    }
+
+    return places;
+  } catch {
+    throw new Error("Unsupported discount currency.");
+  }
+}
+
+function parseFixedAmount(
+  text: string,
+  currency: string
+): number {
+  const decimals = decimalPlaces(currency);
+  const pattern = new RegExp(
+    `^(\\d+)(?:\\.(\\d{1,${decimals}}))?$`
   );
-}
 
-function parseInteger(
-  value:
-    | FormDataEntryValue
-    | null
-) {
-  const parsed =
-    Number.parseInt(
-      cleanString(value),
-      10
-    );
+  if (decimals === 0 && !/^\d+$/.test(text)) {
+    throw new Error("This currency requires whole amounts.");
+  }
 
-  return Number.isNaN(
-    parsed
-  )
-    ? null
-    : parsed;
-}
+  const match =
+    decimals === 0
+      ? /^(\d+)$/.exec(text)
+      : pattern.exec(text);
 
-function createUrl(
-  path: string,
-  params: Record<
-    string,
-    string
-  >
-) {
-  const url =
-    new URL(
-      path,
-      "https://embernix.local"
-    );
+  if (!match) {
+    throw new Error("Invalid fixed discount amount.");
+  }
 
-  for (
-    const [
-      key,
-      value,
-    ] of Object.entries(
-      params
-    )
+  const whole = Number(match[1]);
+  const fraction =
+    decimals > 0
+      ? Number((match[2] ?? "").padEnd(decimals, "0"))
+      : 0;
+
+  const result = whole * 10 ** decimals + fraction;
+
+  if (
+    !Number.isSafeInteger(result) ||
+    result <= 0 ||
+    result > 2147483647
   ) {
-    url.searchParams.set(
-      key,
-      value
-    );
+    throw new Error("Fixed discount amount is out of range.");
   }
 
-  return `${url.pathname}${url.search}`;
+  return result;
 }
 
-function redirectError(
-  path: string,
-  message: string
-): never {
-  redirect(
-    createUrl(
-      path,
-      {
-        error:
-          message,
-      }
-    )
-  );
-}
-
-function readCreemDiscountId(formData: FormData): string | null {
-  const value = nullableString(formData.get("creemDiscountId"));
-  if (value && !/^dis_[A-Za-z0-9_-]{3,116}$/.test(value)) {
-    throw new Error("Enter a valid Creem discount ID (dis_...).");
-  }
-  return value;
-}
-
-/* =========================================================
-   ADMIN
-========================================================= */
-
-async function requireAdmin() {
-  const supabase =
-    await createClient();
+async function requireAdmin(): Promise<void> {
+  const supabase = await createClient();
 
   const {
     data: { user },
-  } =
-    await supabase.auth.getUser();
+    error,
+  } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (error || !user) {
     redirect("/login");
   }
 
-  const {
-    data: admin,
-  } = await supabase
+  const { data: adminUser, error: adminError } = await supabase
     .from("admin_users")
     .select("user_id")
-    .eq(
-      "user_id",
-      user.id
-    )
+    .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!admin) {
+  if (adminError || !adminUser) {
     redirect("/dashboard");
   }
-
-  return user;
 }
 
-/* =========================================================
-   VALIDATION
-========================================================= */
+function parseCoupon(formData: FormData): CouponData {
+  const code = value(formData.get("code")).toUpperCase();
+  const description = value(formData.get("description")) || null;
+  const type = value(formData.get("discountType"));
+  const rawAmount = value(formData.get("amount"));
+  const rawCurrency = value(formData.get("currency")).toUpperCase();
+  const rawExpiry = value(formData.get("expiresAt"));
+  const rawLimit = value(formData.get("usageLimit"));
 
-type CouponPayload = {
-  code: string;
-
-  description:
-    | string
-    | null;
-
-  discount_type:
-    EmbernixDiscountType;
-
-  amount: number;
-
-  currency:
-    | string
-    | null;
-
-  active: boolean;
-
-  expires_at:
-    | string
-    | null;
-
-  usage_limit:
-    | number
-    | null;
-};
-
-function parseCoupon(
-  formData: FormData
-): CouponPayload {
-  const code =
-    cleanString(
-      formData.get(
-        "code"
-      )
-    ).toUpperCase();
-
-  const description =
-    nullableString(
-      formData.get(
-        "description"
-      )
-    );
-
-  const rawType =
-    cleanString(
-      formData.get(
-        "discountType"
-      )
-    );
-
-  const amount =
-    parseInteger(
-      formData.get(
-        "amount"
-      )
-    );
-
-  const rawCurrency =
-    cleanString(
-      formData.get(
-        "currency"
-      )
-    ).toUpperCase();
-
-  const active =
-    parseBoolean(
-      formData.get(
-        "active"
-      )
-    );
-
-  const rawExpiry =
-    nullableString(
-      formData.get(
-        "expiresAt"
-      )
-    );
-
-  const usageLimit =
-    parseInteger(
-      formData.get(
-        "usageLimit"
-      )
-    );
-
-  if (
-    !/^[A-Z0-9]{1,32}$/.test(
-      code
-    )
-  ) {
-    throw new Error(
-      "Coupon code must use only letters and numbers and be 1–32 characters."
-    );
+  if (!/^[A-Z0-9]{1,32}$/.test(code)) {
+    throw new Error("Coupon code must contain 1–32 letters or numbers.");
   }
 
-  if (
-    description &&
-    description.length >
-      500
-  ) {
-    throw new Error(
-      "Description cannot exceed 500 characters."
-    );
+  if (description && description.length > 500) {
+    throw new Error("Description is too long.");
   }
 
-  if (
-    rawType !==
-      "percentage" &&
-    rawType !==
-      "flat"
-  ) {
-    throw new Error(
-      "Invalid discount type."
-    );
+  if (type !== "percentage" && type !== "flat") {
+    throw new Error("Invalid discount type.");
   }
 
-  const discountType =
-    rawType as EmbernixDiscountType;
+  let amount: number;
+  let currency: string | null = null;
 
-  if (
-    amount === null ||
-    amount <= 0
-  ) {
-    throw new Error(
-      "Discount amount must be greater than zero."
-    );
-  }
+  if (type === "percentage") {
+    const percentage = positiveInteger(rawAmount);
 
-  if (
-    discountType ===
-      "percentage" &&
-    amount > 100
-  ) {
-    throw new Error(
-      "Percentage discount cannot exceed 100%."
-    );
-  }
-
-  let currency:
-    | string
-    | null =
-    null;
-
-  if (
-    discountType ===
-    "flat"
-  ) {
-    if (
-      rawCurrency.length !==
-      3
-    ) {
-      throw new Error(
-        "Flat discounts require a 3-letter currency code."
-      );
+    if (!percentage || percentage > 100) {
+      throw new Error("Percentage must be between 1 and 100.");
     }
 
-    currency =
-      rawCurrency;
+    amount = percentage;
+  } else {
+    if (!/^[A-Z]{3}$/.test(rawCurrency)) {
+      throw new Error("Invalid currency code.");
+    }
+
+    currency = rawCurrency;
+    amount = parseFixedAmount(rawAmount, currency);
   }
 
-  if (
-    usageLimit !== null &&
-    usageLimit <= 0
-  ) {
-    throw new Error(
-      "Usage limit must be greater than zero."
-    );
+  let usageLimit: number | null = null;
+
+  if (rawLimit) {
+    usageLimit = positiveInteger(rawLimit);
+
+    if (!usageLimit || usageLimit > 2147483647) {
+      throw new Error("Invalid usage limit.");
+    }
   }
 
-  let expiresAt:
-    | string
-    | null =
-    null;
+  let expiresAt: string | null = null;
 
   if (rawExpiry) {
-    const parsedDate =
-      new Date(
-        rawExpiry
-      );
+    const date = new Date(rawExpiry);
 
-    if (
-      Number.isNaN(
-        parsedDate.getTime()
-      )
-    ) {
-      throw new Error(
-        "Invalid expiry date."
-      );
+    if (!Number.isFinite(date.getTime())) {
+      throw new Error("Invalid expiration date.");
     }
 
-    expiresAt =
-      parsedDate.toISOString();
+    expiresAt = date.toISOString();
   }
 
   return {
     code,
-
     description,
-
-    discount_type:
-      discountType,
-
+    discount_type: type,
     amount,
-
     currency,
-
-    active,
-
-    expires_at:
-      expiresAt,
-
-    usage_limit:
-      usageLimit,
+    active: formData.has("active"),
+    expires_at: expiresAt,
+    usage_limit: usageLimit,
   };
 }
 
-/* =========================================================
-   CREATE
-========================================================= */
+async function findCoupon(id: string): Promise<StoredCoupon> {
+  const admin = createAdminClient();
 
-export async function createCoupon(
-  formData: FormData
-) {
-  await requireAdmin();
+  const { data, error } = await admin
+    .from("coupons")
+    .select(
+      "id,code,description,discount_type,amount,currency,active,expires_at,usage_limit,creem_discount_id"
+    )
+    .eq("id", id)
+    .maybeSingle();
 
-  let coupon:
-    | CouponPayload
-    | undefined;
-
-  try {
-    coupon =
-      parseCoupon(
-        formData
-      );
-  } catch (error) {
-    redirectError(
-      "/admin/coupons/new",
-      error instanceof Error
-        ? error.message
-        : "Invalid coupon."
-    );
+  if (error || !data) {
+    throw new Error("Coupon not found.");
   }
 
-  const admin =
-    createAdminClient();
+  if (
+    data.discount_type !== "percentage" &&
+    data.discount_type !== "flat"
+  ) {
+    throw new Error("Unsupported coupon type.");
+  }
 
-  const {
-    data: created,
-    error,
-  } = await admin
+  return data as StoredCoupon;
+}
+
+function sameDate(a: string | null, b: string | null): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return new Date(a).getTime() === new Date(b).getTime();
+}
+
+function termsChanged(a: CouponData, b: CouponData): boolean {
+  return (
+    a.code !== b.code ||
+    a.discount_type !== b.discount_type ||
+    a.amount !== b.amount ||
+    a.currency !== b.currency ||
+    a.usage_limit !== b.usage_limit ||
+    !sameDate(a.expires_at, b.expires_at)
+  );
+}
+
+async function getProductIds(): Promise<string[]> {
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("products")
+    .select("creem_product_id")
+    .eq("active", true);
+
+  if (error) {
+    throw new Error("Unable to load eligible products.");
+  }
+
+  const ids = [
+    ...new Set(
+      (data ?? [])
+        .map((item) => item.creem_product_id)
+        .filter(
+          (id): id is string =>
+            typeof id === "string" &&
+            /^prod_[A-Za-z0-9_-]+$/.test(id)
+        )
+    ),
+  ];
+
+  if (!ids.length) {
+    throw new Error("No eligible Creem products found.");
+  }
+
+  return ids;
+}
+
+async function createRemote(coupon: CouponData): Promise<string> {
+  const productIds = await getProductIds();
+
+  const discount = await createCreemDiscount({
+    name: coupon.code,
+    code: coupon.code,
+    type:
+      coupon.discount_type === "percentage"
+        ? "percentage"
+        : "fixed",
+    ...(coupon.discount_type === "percentage"
+      ? { percentage: coupon.amount }
+      : {
+          amount: coupon.amount,
+          currency: coupon.currency ?? "USD",
+        }),
+    maxRedemptions: coupon.usage_limit,
+    expiryDate: coupon.expires_at,
+    productIds,
+  });
+
+  if (
+    !/^dis_[A-Za-z0-9_-]+$/.test(discount.id) ||
+    discount.code.toUpperCase() !== coupon.code
+  ) {
+    throw new Error("Creem returned an invalid discount.");
+  }
+
+  return discount.id;
+}
+
+async function deleteRemote(id: string): Promise<void> {
+  const key = process.env.CREEM_API_KEY;
+
+  if (!key || !/^dis_[A-Za-z0-9_-]+$/.test(id)) {
+    throw new Error("Creem discount cleanup is not configured.");
+  }
+
+  const environment = process.env.CREEM_ENVIRONMENT;
+
+  if (environment !== "test" && environment !== "production") {
+    throw new Error("Invalid Creem environment.");
+  }
+
+  const base =
+    environment === "production"
+      ? "https://api.creem.io"
+      : "https://test-api.creem.io";
+
+  const response = await fetch(
+    `${base}/v1/discounts/${encodeURIComponent(id)}/delete`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": key },
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Creem cleanup failed (${response.status}).`);
+  }
+}
+
+export async function createCoupon(formData: FormData): Promise<void> {
+  await requireAdmin();
+
+  const path = "/admin/coupons/new";
+
+  let coupon: CouponData;
+
+  try {
+    coupon = parseCoupon(formData);
+  } catch (error) {
+    fail(path, errorMessage(error));
+  }
+
+  const admin = createAdminClient();
+
+  const { data: existing, error: lookupError } = await admin
+    .from("coupons")
+    .select("id")
+    .eq("code", coupon.code)
+    .maybeSingle();
+
+  if (lookupError) {
+    fail(path, "Unable to check existing coupons.");
+  }
+
+  if (existing) {
+    fail(path, "This coupon code already exists.");
+  }
+
+  let discountId: string | null = null;
+
+  if (coupon.active) {
+    try {
+      discountId = await createRemote(coupon);
+    } catch (error) {
+      console.error("Creem coupon creation failed:", error);
+      fail(path, "Creem could not create this discount.");
+    }
+  }
+
+  const { data: created, error: insertError } = await admin
     .from("coupons")
     .insert({
-      code:
-        coupon.code,
-
-      description:
-        coupon.description,
-
-      discount_type:
-        coupon.discount_type,
-
-      amount:
-        coupon.amount,
-
-      currency:
-        coupon.currency,
-
-      active:
-        coupon.active,
-
-      expires_at:
-        coupon.expires_at,
-
-      usage_limit:
-        coupon.usage_limit,
-
-      creem_discount_id: readCreemDiscountId(formData),
-
-      updated_at:
-        new Date().toISOString(),
+      ...coupon,
+      creem_discount_id: discountId,
+      updated_at: new Date().toISOString(),
     })
     .select("id")
     .single();
 
-  if (
-    error ||
-    !created
-  ) {
-    redirectError(
-      "/admin/coupons/new",
-      error?.code ===
-        "23505"
-        ? "A coupon with this code already exists."
-        : "Unable to create coupon."
+  if (insertError || !created) {
+    if (discountId) {
+      try {
+        await deleteRemote(discountId);
+      } catch (cleanupError) {
+        console.error("Manual Creem cleanup required:", {
+          discountId,
+          cleanupError,
+        });
+
+        fail(
+          path,
+          "Database save failed. Remote Creem cleanup may be required."
+        );
+      }
+    }
+
+    fail(
+      path,
+      insertError?.code === "23505"
+        ? "This coupon code already exists."
+        : "Unable to save coupon."
     );
   }
-  revalidatePath(
-    "/admin/coupons"
-  );
 
-  redirect(
-    createUrl(
-      `/admin/coupons/${created.id}/edit`,
-      {
-        created:
-          "1",
-      }
-    )
-  );
+  revalidatePath("/admin/coupons");
+  redirect(`/admin/coupons/${created.id}/edit?created=1`);
 }
-
-/* =========================================================
-   UPDATE
-========================================================= */
 
 export async function updateCoupon(
   couponId: string,
   formData: FormData
-) {
+): Promise<void> {
   await requireAdmin();
 
-  const errorPath =
-    `/admin/coupons/${couponId}/edit`;
+  const path = `/admin/coupons/${couponId}/edit`;
 
-  let coupon:
-    | CouponPayload
-    | undefined;
+  let coupon: CouponData;
+  let existing: StoredCoupon;
 
   try {
-    coupon =
-      parseCoupon(
-        formData
-      );
+    coupon = parseCoupon(formData);
+    existing = await findCoupon(couponId);
   } catch (error) {
-    redirectError(
-      errorPath,
-      error instanceof Error
-        ? error.message
-        : "Invalid coupon."
-    );
+    fail(path, errorMessage(error));
   }
 
-  const admin =
-    createAdminClient();
+  if (coupon.active !== existing.active) {
+    fail(path, "Change coupon status from the coupon list.");
+  }
 
-  const {
-    error,
-  } = await admin
+  if (termsChanged(existing, coupon)) {
+    if (existing.creem_discount_id) {
+      fail(
+        path,
+        "Discount rules are locked until Creem synchronization is implemented."
+      );
+    }
+
+    if (existing.active) {
+      fail(
+        path,
+        "Disable this unmapped coupon before changing its rules."
+      );
+    }
+  }
+
+  const admin = createAdminClient();
+
+  const { error } = await admin
     .from("coupons")
     .update({
-      code:
-        coupon.code,
-
-      description:
-        coupon.description,
-
-      discount_type:
-        coupon.discount_type,
-
-      amount:
-        coupon.amount,
-
-      currency:
-        coupon.currency,
-
-      active:
-        coupon.active,
-
-      expires_at:
-        coupon.expires_at,
-
-      usage_limit:
-        coupon.usage_limit,
-
-      creem_discount_id: readCreemDiscountId(formData),
-
-      updated_at:
-        new Date().toISOString(),
+      ...coupon,
+      updated_at: new Date().toISOString(),
     })
-    .eq(
-      "id",
-      couponId
-    );
+    .eq("id", couponId);
 
   if (error) {
-    redirectError(
-      errorPath,
-      error.code ===
-        "23505"
-        ? "A coupon with this code already exists."
+    fail(
+      path,
+      error.code === "23505"
+        ? "This coupon code already exists."
         : "Unable to save coupon."
     );
   }
-  revalidatePath(
-    "/admin/coupons"
-  );
 
-  revalidatePath(
-    errorPath
-  );
+  revalidatePath("/admin/coupons");
+  revalidatePath(path);
 
-  redirect(
-    createUrl(
-      errorPath,
-      {
-        saved:
-          "1",
-      }
-    )
-  );
+  redirect(`${path}?saved=1`);
 }
-
-/* =========================================================
-   ENABLE / DISABLE
-========================================================= */
 
 export async function toggleCouponStatus(
   couponId: string,
   nextStatus: boolean
-) {
+): Promise<void> {
   await requireAdmin();
 
-  const admin =
-    createAdminClient();
+  let coupon: StoredCoupon;
 
-  const {
-    error,
-  } = await admin
-    .from("coupons")
-    .update({
-      active:
-        nextStatus,
-
-      updated_at:
-        new Date().toISOString(),
-    })
-    .eq(
-      "id",
-      couponId
-    );
-
-  if (error) {
-    console.error(
-      "Failed to update coupon status:",
-      error
-    );
-
+  try {
+    coupon = await findCoupon(couponId);
+  } catch (error) {
+    console.error("Coupon lookup failed:", error);
     return;
   }
-  revalidatePath(
-    "/admin/coupons"
-  );
 
-  revalidatePath(
-    `/admin/coupons/${couponId}/edit`
-  );
+  if (coupon.active === nextStatus) return;
+
+  if (coupon.creem_discount_id) {
+    console.error(
+      "Remote coupon status changes are not enabled:",
+      couponId
+    );
+    return;
+  }
+
+  const admin = createAdminClient();
+
+  if (!nextStatus) {
+    const { error } = await admin
+      .from("coupons")
+      .update({
+        active: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", couponId);
+
+    if (error) {
+      console.error("Coupon disable failed:", error);
+      return;
+    }
+  } else {
+    let discountId: string;
+
+    try {
+      discountId = await createRemote(coupon);
+    } catch (error) {
+      console.error("Creem coupon enable failed:", error);
+      return;
+    }
+
+    const { error } = await admin
+      .from("coupons")
+      .update({
+        active: true,
+        creem_discount_id: discountId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", couponId)
+      .eq("active", false)
+      .is("creem_discount_id", null);
+
+    if (error) {
+      console.error("Coupon enable failed:", error);
+
+      try {
+        await deleteRemote(discountId);
+      } catch (cleanupError) {
+        console.error("Manual cleanup required:", {
+          discountId,
+          cleanupError,
+        });
+      }
+
+      return;
+    }
+  }
+
+  revalidatePath("/admin/coupons");
+  revalidatePath(`/admin/coupons/${couponId}/edit`);
 }
