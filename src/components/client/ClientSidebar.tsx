@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import {
   LayoutDashboard,
+  Store,
   Package,
   ReceiptText,
   Ticket,
@@ -22,6 +23,11 @@ const navigation = [
     label: "Overview",
     href: "/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    label: "Marketplace",
+    href: "/marketplace",
+    icon: Store,
   },
   {
     label: "My Products",
