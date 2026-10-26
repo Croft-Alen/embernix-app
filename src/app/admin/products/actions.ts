@@ -1189,20 +1189,48 @@ function validateProduct(
       )
     );
 
-  const priceCents =
-    parseInteger(
-      formData.get(
-        "priceCents"
-      )
-    );
+  const currency = cleanString(
+    formData.get("currency")
+  ).toUpperCase();
 
-  const currency =
-    cleanString(
-      formData.get(
-        "currency"
-      )
-    )
-      .toUpperCase();
+  const priceInput = cleanString(
+    formData.get("price")
+  );
+
+  let currencyDecimals: number;
+
+  try {
+    currencyDecimals = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+    }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    throw new Error("Invalid currency code.");
+  }
+
+  if (
+    !/^\d+(?:\.\d+)?$/.test(priceInput) ||
+    currencyDecimals > 3
+  ) {
+    throw new Error("Invalid product price.");
+  }
+
+  const [whole, fraction = ""] = priceInput.split(".");
+
+  if (fraction.length > currencyDecimals) {
+    throw new Error(
+      `Price supports at most ${currencyDecimals} decimal places.`
+    );
+  }
+
+  const multiplier = 10 ** currencyDecimals;
+  const priceCents =
+    Number(whole) * multiplier +
+    Number(fraction.padEnd(currencyDecimals, "0") || "0");
+
+  if (!Number.isSafeInteger(priceCents)) {
+    throw new Error("Product price is too large.");
+  }
 
   const demoUrl =
     nullableString(

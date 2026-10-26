@@ -242,28 +242,30 @@ export default function ProductForm({
           </div>
 
           <div>
-            <label
-              htmlFor="priceCents"
-              className={labelClass}
-            >
-              Price in cents
+            <label htmlFor="price" className={labelClass}>
+              Price ({product.currency || "USD"})
             </label>
 
             <input
-              id="priceCents"
-              name="priceCents"
+              id="price"
+              name="price"
               type="number"
               min="0"
-              step="1"
+              step="any"
               defaultValue={
-                product.price_cents
+                product.price_cents /
+                10 ** (new Intl.NumberFormat("en-US", {
+                  style: "currency",
+                  currency: product.currency || "USD",
+                }).resolvedOptions().maximumFractionDigits ?? 2)
               }
+              placeholder="30.00"
               className={inputClass}
               required
             />
 
             <p className={helperClass}>
-              Example: $12.00 = 1200.
+              Enter the normal price, for example 30.00 for $30.00.
             </p>
           </div>
 
