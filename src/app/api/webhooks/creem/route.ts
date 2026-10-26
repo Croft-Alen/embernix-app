@@ -170,8 +170,6 @@ async function completeCheckout(
     );
   }
 
-  // Only one-time digital product purchases are
-  // supported by this fulfillment function.
   if (
     billingType !== "onetime" ||
     (orderType &&
@@ -200,12 +198,21 @@ async function completeCheckout(
     !uuidPattern.test(metadataUserId) ||
     !uuidPattern.test(metadataProductId)
   ) {
+    console.error("Creem metadata validation failed:", {
+      eventId: event.id,
+      checkoutId,
+      metadataKeys: Object.keys(metadata),
+      userIdType: typeof metadata.userId,
+      productIdType: typeof metadata.productId,
+      userIdLength: metadataUserId?.length ?? 0,
+      productIdLength: metadataProductId?.length ?? 0,
+    });
+
     throw new Error(
       "Invalid Embernix purchase identifiers."
     );
   }
 
-  // Creem's monetary values use minor units.
   const subtotalCents = amount(
     order,
     "sub_total"
@@ -238,8 +245,6 @@ async function completeCheckout(
 
   const admin = createAdminClient();
 
-  // Match product mapping to the original
-  // Embernix product identifier.
   const {
     data: localProduct,
     error: productError,
@@ -256,8 +261,6 @@ async function completeCheckout(
     );
   }
 
-  // Confirm the Creem checkout belongs to
-  // the same Embernix customer and order.
   const {
     data: localOrder,
     error: orderError,
@@ -287,9 +290,6 @@ async function completeCheckout(
     );
   }
 
-  // The database function verifies all amounts,
-  // currency, order contents, and event idempotency
-  // in one transaction before granting ownership.
   const {
     data: result,
     error: fulfillmentError,
@@ -408,9 +408,6 @@ export async function POST(request: Request) {
       });
     }
 
-    // These events must be addressed before
-    // enabling production sales. Acknowledge them
-    // without making an unverified state change.
     if (
       event.eventType === "refund.created" ||
       event.eventType === "dispute.created"
@@ -439,7 +436,6 @@ export async function POST(request: Request) {
       error
     );
 
-    // Let Creem retry a failed fulfillment.
     return NextResponse.json(
       {
         error:
