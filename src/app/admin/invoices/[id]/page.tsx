@@ -1,114 +1,58 @@
-import Link from "next/link";
 
+import Link from "next/link";
 import {
   ArrowLeft,
   CalendarDays,
   CircleDollarSign,
   CreditCard,
-  FilePenLine,
   ReceiptText,
   UserRound,
 } from "lucide-react";
-
-import {
-  notFound,
-} from "next/navigation";
-
+import { notFound } from "next/navigation";
 import DownloadInvoiceButton from "@/components/invoices/DownloadInvoiceButton";
-
-import {
-  createAdminClient,
-} from "@/lib/supabase/admin";
-
-import {
-  getProviderAvatar,
-} from "@/lib/auth/profile";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getProviderAvatar } from "@/lib/auth/profile";
 
 type InvoicePageProps = {
-  params: Promise<{
-    id: string;
-  }>;
+  params: Promise<{ id: string }>;
 };
 
-function formatMoney(
-  cents: number,
-  currency: string
-) {
+function formatMoney(cents: number, currency: string) {
   try {
-    return new Intl.NumberFormat(
-      "en-US",
-      {
-        style:
-          "currency",
-
-        currency:
-          currency ||
-          "USD",
-      }
-    ).format(
-      cents / 100
-    );
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency || "USD",
+    }).format(cents / 100);
   } catch {
-    return `${
-      currency ||
-      "USD"
-    } ${(
-      cents / 100
-    ).toFixed(2)}`;
+    return `${currency || "USD"} ${(cents / 100).toFixed(2)}`;
   }
 }
 
-function formatDate(
-  value:
-    | string
-    | null
-) {
-  if (!value) {
-    return "—";
-  }
+function formatDate(value: string | null) {
+  if (!value) return "—";
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
-    return "—";
-  }
+  if (Number.isNaN(date.getTime())) return "—";
 
-  return date.toLocaleString(
-    "en-US",
-    {
-      dateStyle:
-        "medium",
-
-      timeStyle:
-        "short",
-    }
-  );
+  return date.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
-function statusClass(
-  status: string
-) {
+function statusClass(status: string) {
   switch (status) {
     case "paid":
       return "bg-green-50 text-green-700";
-
     case "unpaid":
       return "bg-amber-50 text-amber-700";
-
     case "draft":
       return "bg-gray-100 text-gray-600";
-
     case "cancelled":
       return "bg-red-50 text-red-700";
-
     case "refunded":
       return "bg-blue-50 text-blue-700";
-
     default:
       return "bg-gray-100 text-gray-600";
   }
@@ -117,18 +61,10 @@ function statusClass(
 export default async function AdminInvoicePage({
   params,
 }: InvoicePageProps) {
-  const {
-    id,
-  } = await params;
+  const { id } = await params;
+  const admin = createAdminClient();
 
-  const admin =
-    createAdminClient();
-
-  const {
-    data: invoice,
-    error:
-      invoiceError,
-  } = await admin
+  const { data: invoice, error: invoiceError } = await admin
     .from("invoices")
     .select(`
       id,
@@ -144,35 +80,21 @@ export default async function AdminInvoicePage({
       due_at,
       paid_at,
       payment_provider,
-      paddle_transaction_id,
       notes,
-      created_by,
       created_at,
       updated_at
     `)
-    .eq(
-      "id",
-      id
-    )
+    .eq("id", id)
     .maybeSingle();
 
-  if (
-    invoiceError ||
-    !invoice
-  ) {
+  if (invoiceError || !invoice) {
     notFound();
   }
 
-  const [
-    itemsResult,
-    profileResult,
-    authResult,
-  ] =
+  const [itemsResult, profileResult, authResult] =
     await Promise.all([
       admin
-        .from(
-          "invoice_items"
-        )
+        .from("invoice_items")
         .select(`
           id,
           title,
@@ -180,34 +102,16 @@ export default async function AdminInvoicePage({
           quantity,
           unit_price_cents,
           line_total_cents,
-          sort_order,
-          created_at
+          sort_order
         `)
-        .eq(
-          "invoice_id",
-          invoice.id
-        )
-        .order(
-          "sort_order",
-          {
-            ascending: true,
-          }
-        ),
+        .eq("invoice_id", invoice.id)
+        .order("sort_order", { ascending: true }),
 
       invoice.user_id
         ? admin
-            .from(
-              "profiles"
-            )
-            .select(`
-              id,
-              full_name,
-              created_at
-            `)
-            .eq(
-              "id",
-              invoice.user_id
-            )
+            .from("profiles")
+            .select("id, full_name")
+            .eq("id", invoice.user_id)
             .maybeSingle()
         : Promise.resolve({
             data: null,
@@ -215,61 +119,57 @@ export default async function AdminInvoicePage({
           }),
 
       invoice.user_id
-        ? admin.auth.admin.getUserById(
-            invoice.user_id
-          )
+        ? admin.auth.admin.getUserById(invoice.user_id)
         : Promise.resolve({
-            data: {
-              user: null,
-            },
+            data: { user: null },
             error: null,
           }),
     ]);
 
-  if (
-    itemsResult.error
-  ) {
-    throw new Error(
-      "Unable to load invoice items."
-    );
+  if (itemsResult.error) {
+    throw new Error("Unable to load invoice items.");
   }
 
-  const items =
-    itemsResult.data ??
-    [];
-
-  const profile =
-    profileResult.data;
-
-  const authUser =
-    authResult.data.user;
+  const items = itemsResult.data ?? [];
+  const profile = profileResult.data;
+  const authUser = authResult.data.user;
 
   const customerName =
     profile?.full_name ||
-    authUser
-      ?.user_metadata
-      ?.full_name ||
-    authUser
-      ?.user_metadata
-      ?.name ||
+    authUser?.user_metadata?.full_name ||
+    authUser?.user_metadata?.name ||
     "Unnamed customer";
 
-  const customerEmail =
-    authUser?.email ||
-    "—";
+  const customerEmail = authUser?.email || "—";
+  const customerAvatar = authUser
+    ? getProviderAvatar(authUser)
+    : null;
 
-  const customerAvatar =
-    authUser
-      ? getProviderAvatar(
-          authUser
-        )
-      : null;
-
-  const canEdit =
-    invoice.status ===
-      "draft" ||
-    invoice.status ===
-      "unpaid";
+  const summaryCards = [
+    {
+      title: "Total",
+      value: formatMoney(
+        Number(invoice.total_cents ?? 0),
+        invoice.currency
+      ),
+      icon: CircleDollarSign,
+    },
+    {
+      title: "Issued",
+      value: formatDate(invoice.issued_at),
+      icon: CalendarDays,
+    },
+    {
+      title: "Paid",
+      value: formatDate(invoice.paid_at),
+      icon: CreditCard,
+    },
+    {
+      title: "Payment provider",
+      value: invoice.payment_provider || "—",
+      icon: CreditCard,
+    },
+  ];
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-8">
@@ -280,15 +180,12 @@ export default async function AdminInvoicePage({
             className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
           >
             <ArrowLeft className="h-4 w-4" />
-
             Invoices
           </Link>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <h1 className="font-mono text-2xl font-semibold">
-              {
-                invoice.invoice_number
-              }
+              {invoice.invoice_number}
             </h1>
 
             <span
@@ -296,124 +193,46 @@ export default async function AdminInvoicePage({
                 invoice.status
               )}`}
             >
-              {
-                invoice.status
-              }
+              {invoice.status}
             </span>
           </div>
 
           <p className="mt-2 text-sm text-[var(--muted)]">
-            Created{" "}
-            {formatDate(
-              invoice.created_at
-            )}
+            Purchase invoice · Created{" "}
+            {formatDate(invoice.created_at)}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <DownloadInvoiceButton
-            invoiceId={
-              invoice.id
-            }
-          />
-
-          {canEdit && (
-            <Link
-              href={`/admin/invoices/${invoice.id}/edit`}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
-            >
-              <FilePenLine className="h-4 w-4" />
-
-              Edit invoice
-            </Link>
-          )}
-        </div>
+        <DownloadInvoiceButton invoiceId={invoice.id} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <CircleDollarSign className="h-5 w-5" />
+        {summaryCards.map((card) => {
+          const Icon = card.icon;
+
+          return (
+            <div
+              key={card.title}
+              className="rounded-2xl border border-[var(--border)] bg-white p-5"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+                  <Icon className="h-5 w-5" />
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-xs text-[var(--muted)]">
+                    {card.title}
+                  </p>
+
+                  <p className="mt-1 break-words text-sm font-semibold capitalize">
+                    {card.value}
+                  </p>
+                </div>
+              </div>
             </div>
-
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Total
-              </p>
-
-              <p className="mt-1 text-lg font-semibold">
-                {formatMoney(
-                  Number(
-                    invoice.total_cents ??
-                      0
-                  ),
-                  invoice.currency
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <CalendarDays className="h-5 w-5" />
-            </div>
-
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Issued
-              </p>
-
-              <p className="mt-1 text-sm font-medium">
-                {formatDate(
-                  invoice.issued_at
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <CalendarDays className="h-5 w-5" />
-            </div>
-
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Due
-              </p>
-
-              <p className="mt-1 text-sm font-medium">
-                {formatDate(
-                  invoice.due_at
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-              <CreditCard className="h-5 w-5" />
-            </div>
-
-            <div>
-              <p className="text-xs text-[var(--muted)]">
-                Paid
-              </p>
-
-              <p className="mt-1 text-sm font-medium">
-                {formatDate(
-                  invoice.paid_at
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -426,17 +245,16 @@ export default async function AdminInvoicePage({
 
               <div>
                 <h2 className="font-semibold">
-                  Invoice items
+                  Purchased items
                 </h2>
 
                 <p className="mt-0.5 text-xs text-[var(--muted)]">
-                  Services and items billed on this invoice.
+                  Products included in this purchase.
                 </p>
               </div>
             </div>
 
-            {items.length ===
-            0 ? (
+            {items.length === 0 ? (
               <div className="p-6 text-sm text-[var(--muted)]">
                 No invoice items found.
               </div>
@@ -446,17 +264,14 @@ export default async function AdminInvoicePage({
                   <thead className="border-b border-[var(--border-light)] bg-[var(--surface-secondary)]">
                     <tr>
                       <th className="px-5 py-3 text-xs font-semibold text-[var(--muted)]">
-                        Item
+                        Product
                       </th>
-
                       <th className="px-5 py-3 text-center text-xs font-semibold text-[var(--muted)]">
                         Qty
                       </th>
-
                       <th className="px-5 py-3 text-right text-xs font-semibold text-[var(--muted)]">
                         Unit price
                       </th>
-
                       <th className="px-5 py-3 text-right text-xs font-semibold text-[var(--muted)]">
                         Total
                       </th>
@@ -464,56 +279,42 @@ export default async function AdminInvoicePage({
                   </thead>
 
                   <tbody>
-                    {items.map(
-                      (item) => (
-                        <tr
-                          key={
-                            item.id
-                          }
-                          className="border-b border-[var(--border-light)] last:border-b-0"
-                        >
-                          <td className="px-5 py-4">
-                            <p className="text-sm font-medium">
-                              {
-                                item.title
-                              }
+                    {items.map((item) => (
+                      <tr
+                        key={item.id}
+                        className="border-b border-[var(--border-light)] last:border-b-0"
+                      >
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-medium">
+                            {item.title}
+                          </p>
+
+                          {item.description && (
+                            <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--muted)]">
+                              {item.description}
                             </p>
+                          )}
+                        </td>
 
-                            {item.description && (
-                              <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--muted)]">
-                                {
-                                  item.description
-                                }
-                              </p>
-                            )}
-                          </td>
+                        <td className="px-5 py-4 text-center text-sm">
+                          {item.quantity}
+                        </td>
 
-                          <td className="px-5 py-4 text-center text-sm">
-                            {
-                              item.quantity
-                            }
-                          </td>
+                        <td className="px-5 py-4 text-right text-sm">
+                          {formatMoney(
+                            Number(item.unit_price_cents),
+                            invoice.currency
+                          )}
+                        </td>
 
-                          <td className="px-5 py-4 text-right text-sm">
-                            {formatMoney(
-                              Number(
-                                item.unit_price_cents
-                              ),
-                              invoice.currency
-                            )}
-                          </td>
-
-                          <td className="px-5 py-4 text-right text-sm font-semibold">
-                            {formatMoney(
-                              Number(
-                                item.line_total_cents
-                              ),
-                              invoice.currency
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    )}
+                        <td className="px-5 py-4 text-right text-sm font-semibold">
+                          {formatMoney(
+                            Number(item.line_total_cents),
+                            invoice.currency
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -525,75 +326,53 @@ export default async function AdminInvoicePage({
                   <span className="text-[var(--muted)]">
                     Subtotal
                   </span>
-
                   <span>
                     {formatMoney(
-                      Number(
-                        invoice.subtotal_cents ??
-                          0
-                      ),
+                      Number(invoice.subtotal_cents ?? 0),
                       invoice.currency
                     )}
                   </span>
                 </div>
 
-                {Number(
-                  invoice.discount_cents ??
-                    0
-                ) > 0 && (
+                {Number(invoice.discount_cents ?? 0) > 0 && (
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-[var(--muted)]">
                       Discount
                     </span>
-
                     <span>
                       -
                       {formatMoney(
-                        Number(
-                          invoice.discount_cents
-                        ),
+                        Number(invoice.discount_cents),
                         invoice.currency
                       )}
                     </span>
                   </div>
                 )}
 
-                {Number(
-                  invoice.tax_cents ??
-                    0
-                ) > 0 && (
+                {Number(invoice.tax_cents ?? 0) > 0 && (
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-[var(--muted)]">
                       Tax
                     </span>
-
                     <span>
                       {formatMoney(
-                        Number(
-                          invoice.tax_cents
-                        ),
+                        Number(invoice.tax_cents),
                         invoice.currency
                       )}
                     </span>
                   </div>
                 )}
 
-                <div className="border-t border-[var(--border)] pt-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">
-                      Total
-                    </span>
-
-                    <span className="text-xl font-semibold">
-                      {formatMoney(
-                        Number(
-                          invoice.total_cents ??
-                            0
-                        ),
-                        invoice.currency
-                      )}
-                    </span>
-                  </div>
+                <div className="flex items-center justify-between border-t border-[var(--border)] pt-3">
+                  <span className="font-semibold">
+                    Total paid
+                  </span>
+                  <span className="text-xl font-semibold">
+                    {formatMoney(
+                      Number(invoice.total_cents ?? 0),
+                      invoice.currency
+                    )}
+                  </span>
                 </div>
               </div>
             </div>
@@ -601,14 +380,9 @@ export default async function AdminInvoicePage({
 
           {invoice.notes && (
             <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-              <h2 className="font-semibold">
-                Notes
-              </h2>
-
+              <h2 className="font-semibold">Notes</h2>
               <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[var(--muted)]">
-                {
-                  invoice.notes
-                }
+                {invoice.notes}
               </p>
             </section>
           )}
@@ -621,41 +395,28 @@ export default async function AdminInvoicePage({
                 <UserRound className="h-4 w-4" />
               </div>
 
-              <h2 className="font-semibold">
-                Customer
-              </h2>
+              <h2 className="font-semibold">Customer</h2>
             </div>
 
             <div className="mt-5 flex items-center gap-3">
               {customerAvatar ? (
                 <img
-                  src={
-                    customerAvatar
-                  }
+                  src={customerAvatar}
                   alt=""
                   className="h-11 w-11 rounded-full object-cover"
                 />
               ) : (
                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--surface-secondary)] text-sm font-semibold">
-                  {customerName
-                    .charAt(
-                      0
-                    )
-                    .toUpperCase()}
+                  {customerName.charAt(0).toUpperCase()}
                 </div>
               )}
 
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">
-                  {
-                    customerName
-                  }
+                  {customerName}
                 </p>
-
                 <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
-                  {
-                    customerEmail
-                  }
+                  {customerEmail}
                 </p>
               </div>
             </div>
@@ -672,47 +433,29 @@ export default async function AdminInvoicePage({
 
           <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
             <h2 className="font-semibold">
-              Payment
+              Payment details
             </h2>
 
             <div className="mt-5 space-y-4">
               <div>
                 <p className="text-xs text-[var(--muted)]">
-                  Status
+                  Payment status
                 </p>
-
-                <div className="mt-2">
-                  <span
-                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${statusClass(
-                      invoice.status
-                    )}`}
-                  >
-                    {
-                      invoice.status
-                    }
-                  </span>
-                </div>
+                <span
+                  className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${statusClass(
+                    invoice.status
+                  )}`}
+                >
+                  {invoice.status}
+                </span>
               </div>
 
               <div>
                 <p className="text-xs text-[var(--muted)]">
                   Payment provider
                 </p>
-
                 <p className="mt-1 text-sm font-medium capitalize">
-                  {invoice.payment_provider ||
-                    "—"}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs text-[var(--muted)]">
-                  Paddle transaction
-                </p>
-
-                <p className="mt-1 break-all font-mono text-xs">
-                  {invoice.paddle_transaction_id ||
-                    "—"}
+                  {invoice.payment_provider || "—"}
                 </p>
               </div>
 
@@ -720,11 +463,17 @@ export default async function AdminInvoicePage({
                 <p className="text-xs text-[var(--muted)]">
                   Currency
                 </p>
-
                 <p className="mt-1 text-sm font-medium">
-                  {
-                    invoice.currency
-                  }
+                  {invoice.currency}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs text-[var(--muted)]">
+                  Payment date
+                </p>
+                <p className="mt-1 text-sm font-medium">
+                  {formatDate(invoice.paid_at)}
                 </p>
               </div>
             </div>

@@ -1,97 +1,67 @@
+
 import React from "react";
-
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
-
+import { NextRequest, NextResponse } from "next/server";
 import {
   renderToBuffer,
   type DocumentProps,
 } from "@react-pdf/renderer";
-
 import InvoicePdfDocument, {
   type InvoicePdfData,
 } from "@/lib/invoices/InvoicePdfDocument";
-
-import {
-  createAdminClient,
-} from "@/lib/supabase/admin";
-
-import {
-  createClient,
-} from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 type RouteContext = {
-  params: Promise<{
-    id: string;
-  }>;
+  params: Promise<{ id: string }>;
 };
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   context: RouteContext
 ) {
   try {
-    const {
-      id,
-    } = await context.params;
-
-    const supabase =
-      await createClient();
+    const { id } = await context.params;
+    const supabase = await createClient();
 
     const {
       data: { user },
-    } =
-      await supabase.auth.getUser();
+    } = await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json(
-        {
-          error:
-            "Authentication required.",
-        },
-        {
-          status: 401,
-        }
+        { error: "Authentication required." },
+        { status: 401 }
       );
     }
 
-    const admin =
-      createAdminClient();
+    const admin = createAdminClient();
 
-    const {
-      data: adminRecord,
-      error:
-        adminRecordError,
-    } = await admin
-      .from("admin_users")
-      .select("user_id")
-      .eq(
-        "user_id",
-        user.id
-      )
-      .maybeSingle();
+    const { data: adminRecord, error: adminError } =
+      await admin
+        .from("admin_users")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    if (adminRecordError) {
-      console.error(
-        "Failed to check invoice PDF admin access:",
-        adminRecordError
+    if (adminError) {
+      console.error("Invoice PDF admin access error:", adminError);
+
+      return NextResponse.json(
+        { error: "Unable to verify invoice access." },
+        { status: 500 }
       );
     }
 
-    const {
-      data: invoice,
-      error:
-        invoiceError,
-    } = await admin
+    const { data: invoice, error: invoiceError } = await admin
       .from("invoices")
       .select(`
         id,
         invoice_number,
         user_id,
+        order_id,
+        source,
         status,
         currency,
         subtotal_cents,
@@ -99,68 +69,54 @@ export async function GET(
         tax_cents,
         total_cents,
         issued_at,
-        due_at,
         paid_at,
         payment_provider,
-        paddle_transaction_id,
         notes,
         created_at
       `)
-      .eq(
-        "id",
-        id
-      )
+      .eq("id", id)
       .maybeSingle();
 
-    if (
-      invoiceError ||
-      !invoice
-    ) {
+    if (invoiceError) {
+      console.error("Invoice PDF lookup error:", invoiceError);
+
       return NextResponse.json(
-        {
-          error:
-            "Invoice not found.",
-        },
-        {
-          status: 404,
-        }
+        { error: "Unable to load invoice." },
+        { status: 500 }
       );
     }
 
-    const isOwner =
-      invoice.user_id ===
-      user.id;
-
-    const isAdmin =
-      Boolean(
-        adminRecord
-      );
-
-    if (
-      !isOwner &&
-      !isAdmin
-    ) {
+    if (!invoice) {
       return NextResponse.json(
-        {
-          error:
-            "You do not have access to this invoice.",
-        },
-        {
-          status: 403,
-        }
+        { error: "Invoice not found." },
+        { status: 404 }
       );
     }
 
-    const [
-      itemsResult,
-      profileResult,
-      authResult,
-    ] =
+    const isOwner = invoice.user_id === user.id;
+    const isAdmin = Boolean(adminRecord);
+
+    if (!isOwner && !isAdmin) {
+      return NextResponse.json(
+        { error: "You do not have access to this invoice." },
+        { status: 403 }
+      );
+    }
+
+    if (
+      !isAdmin &&
+      (invoice.source !== "product" || invoice.status !== "paid")
+    ) {
+      return NextResponse.json(
+        { error: "Purchase receipt not available." },
+        { status: 404 }
+      );
+    }
+
+    const [itemsResult, profileResult, authResult, orderResult] =
       await Promise.all([
         admin
-          .from(
-            "invoice_items"
-          )
+          .from("invoice_items")
           .select(`
             id,
             title,
@@ -170,30 +126,14 @@ export async function GET(
             line_total_cents,
             sort_order
           `)
-          .eq(
-            "invoice_id",
-            invoice.id
-          )
-          .order(
-            "sort_order",
-            {
-              ascending: true,
-            }
-          ),
+          .eq("invoice_id", invoice.id)
+          .order("sort_order", { ascending: true }),
 
         invoice.user_id
           ? admin
-              .from(
-                "profiles"
-              )
-              .select(`
-                id,
-                full_name
-              `)
-              .eq(
-                "id",
-                invoice.user_id
-              )
+              .from("profiles")
+              .select("full_name")
+              .eq("id", invoice.user_id)
               .maybeSingle()
           : Promise.resolve({
               data: null,
@@ -201,205 +141,112 @@ export async function GET(
             }),
 
         invoice.user_id
-          ? admin.auth.admin.getUserById(
-              invoice.user_id
-            )
+          ? admin.auth.admin.getUserById(invoice.user_id)
           : Promise.resolve({
-              data: {
-                user: null,
-              },
+              data: { user: null },
+              error: null,
+            }),
+
+        invoice.order_id
+          ? admin
+              .from("orders")
+              .select("order_number")
+              .eq("id", invoice.order_id)
+              .maybeSingle()
+          : Promise.resolve({
+              data: null,
               error: null,
             }),
       ]);
 
-    if (
-      itemsResult.error
-    ) {
+    if (itemsResult.error) {
       console.error(
         "Failed to load invoice PDF items:",
         itemsResult.error
       );
 
       return NextResponse.json(
-        {
-          error:
-            "Unable to load invoice items.",
-        },
-        {
-          status: 500,
-        }
+        { error: "Unable to load purchased products." },
+        { status: 500 }
       );
     }
 
-    const authUser =
-      authResult.data.user;
+    if (orderResult.error) {
+      console.error(
+        "Failed to load invoice order:",
+        orderResult.error
+      );
+
+      return NextResponse.json(
+        { error: "Unable to load purchase information." },
+        { status: 500 }
+      );
+    }
+
+    const authUser = authResult.data.user;
 
     const customerName =
-      profileResult.data
-        ?.full_name ||
-      authUser
-        ?.user_metadata
-        ?.full_name ||
-      authUser
-        ?.user_metadata
-        ?.name ||
+      profileResult.data?.full_name ||
+      authUser?.user_metadata?.full_name ||
+      authUser?.user_metadata?.name ||
       "Customer";
 
-    const customerEmail =
-      authUser?.email ||
-      "—";
+    const customerEmail = authUser?.email || "—";
 
-    const pdfData:
-      InvoicePdfData = {
-      invoice_number:
-        invoice.invoice_number,
-
-      status:
-        invoice.status,
-
-      currency:
-        invoice.currency,
-
-      subtotal_cents:
-        Number(
-          invoice.subtotal_cents ??
-            0
+    const pdfData: InvoicePdfData = {
+      invoice_number: invoice.invoice_number,
+      order_number: orderResult.data?.order_number ?? null,
+      status: invoice.status,
+      currency: invoice.currency,
+      subtotal_cents: Number(invoice.subtotal_cents ?? 0),
+      discount_cents: Number(invoice.discount_cents ?? 0),
+      tax_cents: Number(invoice.tax_cents ?? 0),
+      total_cents: Number(invoice.total_cents ?? 0),
+      issued_at: invoice.issued_at,
+      paid_at: invoice.paid_at,
+      payment_provider: invoice.payment_provider,
+      customer_name: customerName,
+      customer_email: customerEmail,
+      items: (itemsResult.data ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        quantity: Number(item.quantity),
+        unit_price_cents: Number(item.unit_price_cents),
+        line_total_cents: Number(
+          item.line_total_cents ??
+            Number(item.unit_price_cents) * Number(item.quantity)
         ),
-
-      discount_cents:
-        Number(
-          invoice.discount_cents ??
-            0
-        ),
-
-      tax_cents:
-        Number(
-          invoice.tax_cents ??
-            0
-        ),
-
-      total_cents:
-        Number(
-          invoice.total_cents ??
-            0
-        ),
-
-      issued_at:
-        invoice.issued_at,
-
-      due_at:
-        invoice.due_at,
-
-      paid_at:
-        invoice.paid_at,
-
-      payment_provider:
-        invoice.payment_provider,
-
-      paddle_transaction_id:
-        invoice.paddle_transaction_id,
-
-      notes:
-        invoice.notes,
-
-      customer_name:
-        customerName,
-
-      customer_email:
-        customerEmail,
-
-      items:
-        (
-          itemsResult.data ??
-          []
-        ).map(
-          (item) => ({
-            id:
-              item.id,
-
-            title:
-              item.title,
-
-            description:
-              item.description,
-
-            quantity:
-              Number(
-                item.quantity
-              ),
-
-            unit_price_cents:
-              Number(
-                item.unit_price_cents
-              ),
-
-            line_total_cents:
-              Number(
-                item.line_total_cents
-              ),
-          })
-        ),
+      })),
     };
 
-    const pdfDocument =
-      React.createElement(
-        InvoicePdfDocument,
-        {
-          invoice:
-            pdfData,
-        }
-      ) as React.ReactElement<DocumentProps>;
+    const document = React.createElement(InvoicePdfDocument, {
+      invoice: pdfData,
+    }) as React.ReactElement<DocumentProps>;
 
-    const pdfBuffer =
-      await renderToBuffer(
-        pdfDocument
-      );
+    const buffer = await renderToBuffer(document);
+    const pdfBytes = new Uint8Array(buffer);
 
-    const pdfBytes =
-      new Uint8Array(
-        pdfBuffer
-      );
-
-    const safeInvoiceNumber =
-      invoice.invoice_number.replace(
-        /[^a-zA-Z0-9-_]/g,
-        "-"
-      );
-
-    return new NextResponse(
-      pdfBytes,
-      {
-        status: 200,
-
-        headers: {
-          "Content-Type":
-            "application/pdf",
-
-          "Content-Disposition":
-            `attachment; filename="${safeInvoiceNumber}.pdf"`,
-
-          "Cache-Control":
-            "private, no-store, max-age=0",
-
-          "X-Content-Type-Options":
-            "nosniff",
-        },
-      }
+    const safeNumber = invoice.invoice_number.replace(
+      /[^a-zA-Z0-9-_]/g,
+      "-"
     );
+
+    return new NextResponse(pdfBytes, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${safeNumber}.pdf"`,
+        "Cache-Control": "private, no-store, max-age=0",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   } catch (error) {
-    console.error(
-      "Invoice PDF generation error:",
-      error
-    );
+    console.error("Invoice PDF generation error:", error);
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to generate invoice PDF.",
-      },
-      {
-        status: 500,
-      }
+      { error: "Unable to generate purchase receipt." },
+      { status: 500 }
     );
   }
 }
