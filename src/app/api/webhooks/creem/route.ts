@@ -1,3 +1,4 @@
+
 import {
   createHmac,
   timingSafeEqual,
@@ -293,8 +294,21 @@ async function completeCheckout(
     }
   );
 
-  const localOrderId = requireUuid(localOrder.id);
-  const localUserId = requireUuid(localOrder.user_id);
+  let localOrderId: string;
+  let localUserId: string;
+
+  try {
+    localOrderId = requireUuid(localOrder.id);
+  } catch {
+    throw new Error("Invalid Supabase order ID.");
+  }
+
+  try {
+    localUserId = requireUuid(localOrder.user_id);
+  } catch {
+    throw new Error("Invalid Supabase user ID.");
+  }
+
   const orderNumber = localOrder.order_number;
 
   if (
@@ -342,9 +356,17 @@ async function completeCheckout(
     }
   );
 
-  const localProductId = requireUuid(
-    items[0].product_id
-  );
+  let localProductId: string;
+
+  try {
+    localProductId = requireUuid(
+      items[0].product_id
+    );
+  } catch {
+    throw new Error(
+      "Invalid Supabase order item product ID."
+    );
+  }
 
   const {
     data: localProduct,
