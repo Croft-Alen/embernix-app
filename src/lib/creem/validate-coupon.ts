@@ -64,7 +64,7 @@ export async function validateCheckoutCoupon(
   const { data: coupon, error } = await admin
     .from("coupons")
     .select(
-      "code,description,discount_type,amount,currency,active,expires_at,usage_limit,creem_discount_id"
+      "id,code,description,discount_type,amount,currency,active,expires_at,usage_limit,creem_discount_id"
     )
     .eq("code", code)
     .maybeSingle();
@@ -79,6 +79,17 @@ export async function validateCheckoutCoupon(
     !coupon.creem_discount_id
   ) {
     throw new Error("Coupon is not available.");
+  }
+
+  const { data: eligible, error: eligibilityError } = await admin
+    .from("coupon_products").select("product_id")
+    .eq("coupon_id", coupon.id).eq("product_id", input.productId).maybeSingle();
+
+  if (eligibilityError) {
+    throw new Error("Unable to verify coupon product eligibility.");
+  }
+  if (!eligible) {
+    throw new Error("Coupon does not apply to this product.");
   }
 
   if (isExpired(coupon.expires_at)) {

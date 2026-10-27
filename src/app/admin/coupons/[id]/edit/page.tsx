@@ -62,7 +62,31 @@ export default async function EditCouponPage({
     coupon.id
   );
 
-  const mapped = Boolean(coupon.creem_discount_id);
+  const {
+    data: availableProducts,
+    error: productsError,
+  } = await admin
+    .from("products")
+    .select("id,name")
+    .eq("active", true)
+    .not("creem_product_id", "is", null)
+    .order("name");
+
+  const { data: chosen, error: chosenError } =
+    await admin
+      .from("coupon_products")
+      .select("product_id")
+      .eq("coupon_id", coupon.id);
+
+  if (productsError || chosenError) {
+    throw new Error(
+      "Unable to load coupon products."
+    );
+  }
+
+  const mapped = Boolean(
+    coupon.creem_discount_id
+  );
 
   const success =
     query.created === "1"
@@ -123,10 +147,12 @@ export default async function EditCouponPage({
 
             <p className="mt-1 text-sm leading-6 text-blue-800">
               You can change its description immediately.
-              To change the discount code, amount, currency,
-              expiry or usage limit, first disable this coupon
-              from the Coupons list. After editing it, enable
-              it to create its updated Creem discount.
+              To change the discount code, amount,
+              currency, expiry, usage limit, or
+              applicable products, first disable this
+              coupon from the Coupons list. After
+              editing it, enable it to create its
+              updated Creem discount.
             </p>
           </div>
         </div>
@@ -142,9 +168,10 @@ export default async function EditCouponPage({
             </p>
 
             <p className="mt-1 text-sm leading-6 text-amber-800">
-              This coupon exists locally but is not mapped
-              to Creem. Open the Coupons list and choose
-              Sync to create its matching Creem discount.
+              This coupon exists locally but is not
+              mapped to Creem. Open the Coupons list
+              and choose Sync to create its matching
+              Creem discount.
             </p>
           </div>
         </div>
@@ -160,10 +187,10 @@ export default async function EditCouponPage({
             </p>
 
             <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-              You can edit its discount rules while it
-              remains inactive and has no Creem mapping.
-              Save your changes before enabling it from
-              the Coupons list.
+              You can edit its discount rules while
+              it remains inactive and has no Creem
+              mapping. Save your changes before
+              enabling it from the Coupons list.
             </p>
           </div>
         </div>
@@ -172,13 +199,18 @@ export default async function EditCouponPage({
       <CouponForm
         mode="edit"
         action={saveCoupon}
+        products={availableProducts ?? []}
+        selectedProductIds={(chosen ?? []).map(
+          (item) => item.product_id
+        )}
         coupon={{
           id: coupon.id,
           code: coupon.code,
           description: coupon.description,
-          discount_type: coupon.discount_type as
-            | "percentage"
-            | "flat",
+          discount_type:
+            coupon.discount_type as
+              | "percentage"
+              | "flat",
           amount: coupon.amount,
           currency: coupon.currency,
           active: coupon.active,
@@ -186,7 +218,8 @@ export default async function EditCouponPage({
             coupon.expires_at
           ),
           usage_limit: coupon.usage_limit,
-          creem_discount_id: coupon.creem_discount_id,
+          creem_discount_id:
+            coupon.creem_discount_id,
         }}
       />
     </div>

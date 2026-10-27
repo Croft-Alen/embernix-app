@@ -256,6 +256,48 @@ function termsChanged(
   );
 }
 
+
+function selectedProductIds(formData: FormData): string[] {
+  const ids = formData.getAll("productIds").map(String);
+  const unique = [...new Set(ids)];
+  if (ids.length !== unique.length || unique.length === 0 ||
+      unique.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) {
+    throw new Error("Select at least one valid product.");
+  }
+  return unique;
+}
+
+async function eligibleCreemProducts(ids: string[]): Promise<string[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("products")
+    .select("id,creem_product_id").eq("active", true).in("id", ids);
+  if (error || !data || data.length !== ids.length ||
+      data.some((item) => !item.creem_product_id ||
+        !/^prod_[A-Za-z0-9_-]+$/.test(item.creem_product_id))) {
+    throw new Error("Every selected product must be active and connected to Creem.");
+  }
+  return data.map((item) => item.creem_product_id as string);
+}
+
+async function savedProductIds(couponId: string): Promise<string[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("coupon_products")
+    .select("product_id").eq("coupon_id", couponId);
+  if (error) throw new Error("Unable to read coupon products.");
+  if (!data?.length) throw new Error("Coupon has no selected products.");
+  return data.map((row) => row.product_id);
+}
+
+async function saveProductIds(couponId: string, ids: string[]): Promise<void> {
+  const admin = createAdminClient();
+  const { error: deleteError } = await admin.from("coupon_products")
+    .delete().eq("coupon_id", couponId);
+  if (deleteError) throw new Error("Unable to update coupon products.");
+  const { error } = await admin.from("coupon_products")
+    .insert(ids.map((product_id) => ({ coupon_id: couponId, product_id })));
+  if (error) throw new Error("Unable to save coupon products.");
+}
+
 async function getProductIds(): Promise<string[]> {
   const admin = createAdminClient();
 
@@ -320,11 +362,11 @@ async function ensureRemoteCodeAvailable(
 }
 
 async function createRemote(
-  coupon: CouponData
+  coupon: CouponData, selectedIds: string[]
 ): Promise<string> {
   await ensureRemoteCodeAvailable(coupon.code);
 
-  const products = await getProductIds();
+  const products = await eligibleCreemProducts(selectedIds);
 
   const discount = await createCreemDiscount({
     name: coupon.code,
@@ -439,9 +481,12 @@ export async function createCoupon(
   const path = "/admin/coupons/new";
 
   let coupon: CouponData;
+  let productIds: string[];
 
   try {
     coupon = parseCoupon(formData);
+    productIds = selectedProductIds(formData);
+    await eligibleCreemProducts(productIds);
   } catch (error) {
     fail(path, message(error));
   }
@@ -466,7 +511,7 @@ export async function createCoupon(
 
   if (coupon.active) {
     try {
-      discountId = await createRemote(coupon);
+      discountId = await createRemote(coupon, productIds);
     } catch (error) {
       console.error("Creem discount creation failed:", error);
       fail(path, message(error));
@@ -500,6 +545,18 @@ export async function createCoupon(
     );
   }
 
+  try {
+    await saveProductIds(created.id, productIds);
+  } catch (error) {
+    // Keep mapped coupons for investigation if cleanup cannot be confirmed.
+    if (discountId) {
+      try { await cleanupRemote(discountId); }
+      catch { fail(path, "Coupon product saving failed; Creem cleanup requires review."); }
+    }
+    await admin.from("coupons").delete().eq("id", created.id);
+    fail(path, message(error));
+  }
+
   revalidatePath("/admin/coupons");
 
   redirect(`/admin/coupons/${created.id}/edit?created=1`);
@@ -515,13 +572,22 @@ export async function updateCoupon(
 
   let updated: CouponData;
   let existing: StoredCoupon;
+  let productIds: string[];
+  let previousIds: string[];
 
   try {
     updated = parseCoupon(formData);
     existing = await loadCoupon(couponId);
+    productIds = selectedProductIds(formData);
+    await eligibleCreemProducts(productIds);
+    previousIds = await savedProductIds(couponId);
   } catch (error) {
     fail(path, message(error));
   }
+
+  const productsChanged =
+    productIds.length !== previousIds.length ||
+    productIds.some((id) => !previousIds.includes(id));
 
   if (updated.active !== existing.active) {
     fail(path, "Use the coupon list to change status.");
@@ -529,7 +595,7 @@ export async function updateCoupon(
 
   if (
     existing.creem_discount_id &&
-    termsChanged(existing, updated)
+    (termsChanged(existing, updated) || productsChanged)
   ) {
     fail(
       path,
@@ -540,7 +606,7 @@ export async function updateCoupon(
   if (
     existing.active &&
     !existing.creem_discount_id &&
-    termsChanged(existing, updated)
+    (termsChanged(existing, updated) || productsChanged)
   ) {
     fail(
       path,
@@ -565,6 +631,11 @@ export async function updateCoupon(
         ? "This code already exists."
         : "Unable to save coupon."
     );
+  }
+
+  if (productsChanged) {
+    try { await saveProductIds(couponId, productIds); }
+    catch (error) { fail(path, message(error)); }
   }
 
   revalidatePath("/admin/coupons");
@@ -601,7 +672,7 @@ export async function syncCoupon(
   let discountId: string;
 
   try {
-    discountId = await createRemote(coupon);
+    discountId = await createRemote(coupon, await savedProductIds(couponId));
   } catch (error) {
     console.error("Coupon synchronization failed:", error);
     fail(path, message(error));
@@ -699,7 +770,7 @@ export async function toggleCouponStatus(
     let discountId: string;
 
     try {
-      discountId = await createRemote(coupon);
+      discountId = await createRemote(coupon, await savedProductIds(couponId));
     } catch (error) {
       fail(path, message(error));
     }

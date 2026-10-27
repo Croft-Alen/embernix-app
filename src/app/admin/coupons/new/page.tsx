@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import CouponForm from "@/components/admin/CouponForm";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createCoupon } from "../actions";
 
 type NewCouponPageProps = {
@@ -14,6 +15,18 @@ export default async function NewCouponPage({
   searchParams,
 }: NewCouponPageProps) {
   const query = await searchParams;
+  const admin = createAdminClient();
+
+  const { data: products, error } = await admin
+    .from("products")
+    .select("id,name")
+    .eq("active", true)
+    .not("creem_product_id", "is", null)
+    .order("name");
+
+  if (error) {
+    throw new Error("Unable to load products.");
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6 lg:p-8">
@@ -28,27 +41,27 @@ export default async function NewCouponPage({
 
         <div className="mt-4">
           <h1 className="text-2xl font-semibold">
-            Create coupon
+            Add coupon
           </h1>
 
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Create a discount in Embernix and automatically
-            connect it to Creem.
+            Create a new Embernix discount code.
           </p>
         </div>
       </div>
 
       {query.error && (
-        <div
-          role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-        >
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {query.error}
         </div>
       )}
 
       <CouponForm
         mode="create"
+        products={products ?? []}
+        selectedProductIds={(products ?? []).map(
+          (product) => product.id
+        )}
         action={createCoupon}
         coupon={{
           id: null,

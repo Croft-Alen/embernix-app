@@ -51,7 +51,10 @@ async function ensureNoActiveCheckouts(
     .eq("status", "pending")
     .eq("payment_status", "unpaid")
     .eq("creem_discount_code", code)
-    .in("creem_checkout_state", ["creating", "ready"])
+    .in("creem_checkout_state", [
+      "creating",
+      "ready",
+    ])
     .limit(1);
 
   if (error) {
@@ -62,60 +65,144 @@ async function ensureNoActiveCheckouts(
 
   if (data && data.length > 0) {
     throw new Error(
-      "This coupon has an active unpaid checkout. Resolve that checkout before deleting it."
+      "This coupon is used by an active unpaid checkout. Resolve the checkout before deleting it."
     );
   }
 }
 
-async function deleteCreemDiscount(
-  discountId: string
-): Promise<void> {
-  if (!/^dis_[A-Za-z0-9_-]+$/.test(discountId)) {
-    throw new Error("Invalid Creem discount ID.");
-  }
-
-  const key = process.env.CREEM_API_KEY;
+function creemBaseUrl(): string {
   const environment = process.env.CREEM_ENVIRONMENT;
 
-  if (
-    !key ||
-    (environment !== "test" &&
-      environment !== "production")
-  ) {
+  if (environment === "test") {
+    return "https://test-api.creem.io";
+  }
+
+  if (environment === "production") {
+    return "https://api.creem.io";
+  }
+
+  throw new Error(
+    "CREEM_ENVIRONMENT must be test or production."
+  );
+}
+
+function creemHeaders(): HeadersInit {
+  const key = process.env.CREEM_API_KEY;
+
+  if (!key) {
     throw new Error(
-      "Creem configuration is incomplete."
+      "CREEM_API_KEY is not configured."
     );
   }
 
-  const baseUrl =
-    environment === "test"
-      ? "https://test-api.creem.io"
-      : "https://api.creem.io";
+  return {
+    "x-api-key": key,
+    Accept: "application/json",
+  };
+}
 
-  const response = await fetch(
-    `${baseUrl}/v1/discounts/${encodeURIComponent(
-      discountId
-    )}/delete`,
-    {
-      method: "DELETE",
-      headers: {
-        "x-api-key": key,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    }
+async function getRemoteDiscountStatus(
+  discountId: string
+): Promise<"exists" | "missing"> {
+  const url = new URL(
+    "/v1/discounts",
+    creemBaseUrl()
   );
 
+  url.searchParams.set(
+    "discount_id",
+    discountId
+  );
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: creemHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+
   if (response.status === 404) {
-    return;
+    return "missing";
   }
 
   if (!response.ok) {
     throw new Error(
-      `Creem discount deletion failed (${response.status}).`
+      `Unable to verify discount in Creem (${response.status}).`
     );
   }
+
+  const result: unknown = await response.json();
+
+  if (
+    !result ||
+    typeof result !== "object" ||
+    Array.isArray(result) ||
+    !("id" in result) ||
+    result.id !== discountId
+  ) {
+    throw new Error(
+      "Creem returned an unexpected discount record."
+    );
+  }
+
+  return "exists";
+}
+
+async function deleteRemoteDiscount(
+  discountId: string
+): Promise<void> {
+  if (
+    !/^dis_[A-Za-z0-9_-]+$/.test(discountId)
+  ) {
+    throw new Error(
+      "Invalid Creem discount ID."
+    );
+  }
+
+  // If already deleted in Creem, there is
+  // no remote operation left to perform.
+  const currentStatus =
+    await getRemoteDiscountStatus(discountId);
+
+  if (currentStatus === "missing") {
+    return;
+  }
+
+  const url = `${creemBaseUrl()}/v1/discounts/${encodeURIComponent(
+    discountId
+  )}/delete`;
+
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: creemHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (response.ok) {
+    return;
+  }
+
+  // Creem might return a non-success status
+  // even when the discount has become missing.
+  // Verify the remote state before failing.
+  if (
+    response.status === 404 ||
+    response.status >= 500
+  ) {
+    const current =
+      await getRemoteDiscountStatus(
+        discountId
+      );
+
+    if (current === "missing") {
+      return;
+    }
+  }
+
+  throw new Error(
+    `Creem discount deletion failed (${response.status}). The discount still exists or could not be verified as deleted.`
+  );
 }
 
 export async function deleteCoupon(
@@ -133,12 +220,16 @@ export async function deleteCoupon(
 
   const admin = createAdminClient();
 
-  const { data: coupon, error: lookupError } =
-    await admin
-      .from("coupons")
-      .select("id,code,creem_discount_id")
-      .eq("id", couponId)
-      .maybeSingle();
+  const {
+    data: coupon,
+    error: lookupError,
+  } = await admin
+    .from("coupons")
+    .select(
+      "id,code,creem_discount_id"
+    )
+    .eq("id", couponId)
+    .maybeSingle();
 
   if (lookupError) {
     fail("Unable to load coupon.");
@@ -149,15 +240,20 @@ export async function deleteCoupon(
   }
 
   try {
-    await ensureNoActiveCheckouts(coupon.code);
+    await ensureNoActiveCheckouts(
+      coupon.code
+    );
 
     if (coupon.creem_discount_id) {
-      await deleteCreemDiscount(
+      await deleteRemoteDiscount(
         coupon.creem_discount_id
       );
     }
   } catch (error) {
-    console.error("Coupon deletion failed:", error);
+    console.error(
+      "Coupon deletion verification failed:",
+      error
+    );
 
     fail(
       error instanceof Error
@@ -166,13 +262,15 @@ export async function deleteCoupon(
     );
   }
 
-  const { data: deleted, error: deleteError } =
-    await admin
-      .from("coupons")
-      .delete()
-      .eq("id", coupon.id)
-      .select("id")
-      .maybeSingle();
+  const {
+    data: deleted,
+    error: deleteError,
+  } = await admin
+    .from("coupons")
+    .delete()
+    .eq("id", coupon.id)
+    .select("id")
+    .maybeSingle();
 
   if (deleteError || !deleted) {
     console.error(
@@ -181,11 +279,13 @@ export async function deleteCoupon(
     );
 
     fail(
-      "The Creem discount was removed or was already missing, but the local coupon could not be deleted. Check database references and try again."
+      "The remote discount was deleted or already missing, but the local record could not be deleted. Check database references."
     );
   }
 
   revalidatePath(PATH);
 
-  redirect(`${PATH}?success=deleted`);
+  redirect(
+    `${PATH}?success=deleted`
+  );
 }

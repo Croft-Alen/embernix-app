@@ -29,6 +29,8 @@ export type CouponFormData = {
 type Props = {
   coupon: CouponFormData;
   mode: "create" | "edit";
+  products: { id: string; name: string }[];
+  selectedProductIds: string[];
   action:
     | ((formData: FormData) => void)
     | ((formData: FormData) => Promise<void>);
@@ -68,6 +70,8 @@ export default function CouponForm({
   coupon,
   mode,
   action,
+  products,
+  selectedProductIds,
 }: Props) {
   const [discountType, setDiscountType] = useState<
     "percentage" | "flat"
@@ -79,11 +83,18 @@ export default function CouponForm({
 
   const [active, setActive] = useState(coupon.active);
 
+  const [selected, setSelected] = useState<string[]>(
+    selectedProductIds
+  );
+
   const editing = mode === "edit";
   const mapped = Boolean(coupon.creem_discount_id);
+
   const decimals = currencyDecimals(currency);
   const fixedStep =
-    decimals === 0 ? "1" : `0.${"0".repeat(decimals - 1)}1`;
+    decimals === 0
+      ? "1"
+      : `0.${"0".repeat(decimals - 1)}1`;
 
   return (
     <form action={action} className="space-y-6">
@@ -97,6 +108,7 @@ export default function CouponForm({
             <h2 className="font-semibold">
               Coupon details
             </h2>
+
             <p className="mt-1 text-sm text-[var(--muted)]">
               Configure a discount customers can use
               during checkout.
@@ -109,6 +121,7 @@ export default function CouponForm({
             <label htmlFor="code" className={label}>
               Coupon code
             </label>
+
             <input
               id="code"
               name="code"
@@ -123,33 +136,50 @@ export default function CouponForm({
           </div>
 
           <div>
-            <label htmlFor="discountType" className={label}>
+            <label
+              htmlFor="discountType"
+              className={label}
+            >
               Discount type
             </label>
+
             <select
               id="discountType"
               name="discountType"
               value={discountType}
               onChange={(event) =>
                 setDiscountType(
-                  event.target.value as "percentage" | "flat"
+                  event.target.value as
+                    | "percentage"
+                    | "flat"
                 )
               }
               className={input}
             >
-              <option value="percentage">Percentage</option>
-              <option value="flat">Fixed amount</option>
+              <option value="percentage">
+                Percentage
+              </option>
+
+              <option value="flat">
+                Fixed amount
+              </option>
             </select>
           </div>
 
           <div className="md:col-span-2">
-            <label htmlFor="description" className={label}>
+            <label
+              htmlFor="description"
+              className={label}
+            >
               Description
             </label>
+
             <textarea
               id="description"
               name="description"
-              defaultValue={coupon.description ?? ""}
+              defaultValue={
+                coupon.description ?? ""
+              }
               rows={3}
               maxLength={500}
               placeholder="Optional internal description"
@@ -170,7 +200,10 @@ export default function CouponForm({
           </div>
 
           <div>
-            <h2 className="font-semibold">Discount value</h2>
+            <h2 className="font-semibold">
+              Discount value
+            </h2>
+
             <p className="mt-1 text-sm text-[var(--muted)]">
               Set how much this coupon reduces the price.
             </p>
@@ -206,7 +239,8 @@ export default function CouponForm({
                   : fixedStep
               }
               defaultValue={
-                discountType === coupon.discount_type
+                discountType ===
+                coupon.discount_type
                   ? discountType === "percentage"
                     ? coupon.amount
                     : amountForDisplay(
@@ -230,7 +264,10 @@ export default function CouponForm({
 
           {discountType === "flat" && (
             <div>
-              <label htmlFor="currency" className={label}>
+              <label
+                htmlFor="currency"
+                className={label}
+              >
                 Currency
               </label>
 
@@ -239,7 +276,9 @@ export default function CouponForm({
                 name="currency"
                 value={currency}
                 onChange={(event) =>
-                  setCurrency(event.target.value.toUpperCase())
+                  setCurrency(
+                    event.target.value.toUpperCase()
+                  )
                 }
                 maxLength={3}
                 minLength={3}
@@ -259,7 +298,10 @@ export default function CouponForm({
           </div>
 
           <div>
-            <h2 className="font-semibold">Availability</h2>
+            <h2 className="font-semibold">
+              Availability
+            </h2>
+
             <p className="mt-1 text-sm text-[var(--muted)]">
               Set optional expiry and redemption limits.
             </p>
@@ -268,34 +310,48 @@ export default function CouponForm({
 
         <div className="mt-6 grid gap-5 md:grid-cols-2">
           <div>
-            <label htmlFor="expiresAt" className={label}>
+            <label
+              htmlFor="expiresAt"
+              className={label}
+            >
               Expiration
             </label>
+
             <input
               id="expiresAt"
               name="expiresAt"
               type="datetime-local"
-              defaultValue={coupon.expires_at ?? ""}
+              defaultValue={
+                coupon.expires_at ?? ""
+              }
               className={input}
             />
+
             <p className="mt-2 text-xs text-[var(--muted)]">
               Leave empty for no expiration.
             </p>
           </div>
 
           <div>
-            <label htmlFor="usageLimit" className={label}>
+            <label
+              htmlFor="usageLimit"
+              className={label}
+            >
               Usage limit
             </label>
+
             <div className="relative">
               <Hash className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
+
               <input
                 id="usageLimit"
                 name="usageLimit"
                 type="number"
                 min="1"
                 step="1"
-                defaultValue={coupon.usage_limit ?? ""}
+                defaultValue={
+                  coupon.usage_limit ?? ""
+                }
                 placeholder="Unlimited"
                 className={`${input} pl-10`}
               />
@@ -313,13 +369,16 @@ export default function CouponForm({
                   value="on"
                 />
               )}
+
               <p className="text-sm font-medium">
                 {coupon.active
                   ? "Active locally"
                   : "Inactive locally"}
               </p>
+
               <p className="mt-1 text-xs text-[var(--muted)]">
-                Status changes are managed from the coupon list.
+                Status changes are managed from
+                the coupon list.
               </p>
             </div>
           ) : (
@@ -333,10 +392,95 @@ export default function CouponForm({
                 }
                 className="h-4 w-4 accent-[var(--primary)]"
               />
+
               <span className="text-sm font-medium">
                 Activate coupon
               </span>
             </label>
+          )}
+        </div>
+      </section>
+
+      <section className={section}>
+        <h2 className="font-semibold">
+          Applicable products
+        </h2>
+
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          Choose which products can use this coupon.
+          To change an existing synchronized coupon,
+          disable it first, save, then enable it again.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          <label className="flex gap-3 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={
+                products.length > 0 &&
+                selected.length === products.length
+              }
+              disabled={mapped}
+              onChange={(event) =>
+                setSelected(
+                  event.target.checked
+                    ? products.map(
+                        (product) => product.id
+                      )
+                    : []
+                )
+              }
+            />
+
+            Select all products
+          </label>
+
+          {products.map((product) => (
+            <label
+              key={product.id}
+              className="flex gap-3 text-sm"
+            >
+              <input
+                type="checkbox"
+                name="productIds"
+                value={product.id}
+                disabled={mapped}
+                checked={selected.includes(
+                  product.id
+                )}
+                onChange={(event) =>
+                  setSelected((current) =>
+                    event.target.checked
+                      ? [
+                          ...current,
+                          product.id,
+                        ]
+                      : current.filter(
+                          (id) =>
+                            id !== product.id
+                        )
+                  )
+                }
+              />
+
+              {product.name}
+            </label>
+          ))}
+
+          {mapped &&
+            selected.map((id) => (
+              <input
+                key={id}
+                type="hidden"
+                name="productIds"
+                value={id}
+              />
+            ))}
+
+          {products.length === 0 && (
+            <p className="text-sm text-red-600">
+              No active products connected to Creem.
+            </p>
           )}
         </div>
       </section>
