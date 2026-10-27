@@ -1,33 +1,21 @@
-import {
-  createAdminClient,
-} from "@/lib/supabase/admin";
+
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export type NotificationType =
   | "ticket_reply"
   | "ticket_resolved"
   | "ticket_closed"
-  | "payment_failed"
-  | "project_in_progress"
-  | "project_completed"
-  | "project_cancelled"
-  | "product_update";
+  | "product_update"
+  | "purchase_success"
+  | "license_reactivated";
 
 type CreateNotificationInput = {
   userId: string;
-
   type: NotificationType;
-
   title: string;
-
   message: string;
-
   href?: string | null;
-
-  metadata?: Record<
-    string,
-    unknown
-  >;
-
+  metadata?: Record<string, unknown>;
   dedupeKey?: string | null;
 };
 
@@ -39,48 +27,22 @@ export async function createNotification({
   href = null,
   metadata = {},
   dedupeKey = null,
-}: CreateNotificationInput) {
-  const admin =
-    createAdminClient();
+}: CreateNotificationInput): Promise<boolean> {
+  const admin = createAdminClient();
 
-  const {
-    error,
-  } = await admin
-    .from(
-      "notifications"
-    )
+  const { error } = await admin
+    .from("notifications")
     .insert({
-      user_id:
-        userId,
-
+      user_id: userId,
       type,
-
       title,
-
       message,
-
       href,
-
       metadata,
-
-      dedupe_key:
-        dedupeKey,
+      dedupe_key: dedupeKey,
     });
 
-  if (!error) {
-    return true;
-  }
-
-  /*
-   * PostgreSQL unique violation.
-   *
-   * This means the same dedupe_key already created
-   * the notification, so we can safely ignore it.
-   */
-  if (
-    error.code ===
-    "23505"
-  ) {
+  if (!error || error.code === "23505") {
     return true;
   }
 

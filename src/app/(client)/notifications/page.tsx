@@ -1,42 +1,22 @@
-import {
-  Bell,
-} from "lucide-react";
 
-import {
-  redirect,
-} from "next/navigation";
+import { Bell } from "lucide-react";
+import { redirect } from "next/navigation";
 
-import {
-  createClient,
-} from "@/lib/supabase/server";
-
+import { createClient } from "@/lib/supabase/server";
 import NotificationsList from "@/components/notifications/NotificationsList";
 
 function iconType(
   type: string
-):
-  | "ticket"
-  | "billing"
-  | "project"
-  | "product"
-  | "general" {
-  switch (
-    type
-  ) {
+): "ticket" | "product" | "general" {
+  switch (type) {
     case "ticket_reply":
     case "ticket_resolved":
     case "ticket_closed":
       return "ticket";
 
-    case "payment_failed":
-      return "billing";
-
-    case "project_in_progress":
-    case "project_completed":
-    case "project_cancelled":
-      return "project";
-
     case "product_update":
+    case "purchase_success":
+    case "license_reactivated":
       return "product";
 
     default:
@@ -45,79 +25,40 @@ function iconType(
 }
 
 export default async function NotificationsPage() {
-  const supabase =
-    await createClient();
+  const supabase = await createClient();
 
   const {
-    data: {
-      user,
-    },
-  } =
-    await supabase.auth.getUser();
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(
-      "/login"
-    );
+    redirect("/login");
   }
 
-  const {
-    data:
-      notifications,
-    error,
-  } = await supabase
-    .from(
-      "notifications"
+  const { data: notifications, error } = await supabase
+    .from("notifications")
+    .select(
+      "id,type,title,message,href,read_at,created_at"
     )
-    .select(`
-      id,
-      type,
-      title,
-      message,
-      href,
-      read_at,
-      created_at
-    `)
-    .eq(
-      "user_id",
-      user.id
-    )
-    .order(
-      "created_at",
-      {
-        ascending:
-          false,
-      }
-    )
-    .limit(
-      100
-    );
+    .eq("user_id", user.id)
+    .order("created_at", {
+      ascending: false,
+    })
+    .limit(100);
 
-  if (
-    error
-  ) {
+  if (error) {
     console.error(
       "Failed to load notifications:",
       error
     );
   }
 
-  const items =
-    (
-      notifications ??
-      []
-    ).map(
-      (
-        item
-      ) => ({
-        ...item,
-
-        category:
-          iconType(
-            item.type
-          ),
-      })
-    );
+  const items = (notifications ?? []).map(
+    (notification) => ({
+      ...notification,
+      category: iconType(notification.type),
+    })
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-5">
@@ -133,19 +74,14 @@ export default async function NotificationsPage() {
             </h1>
 
             <p className="mt-1.5 text-sm leading-6 text-[var(--muted)]">
-              Important updates about your
-              tickets, projects, billing, and
-              products.
+              Important updates about your tickets,
+              purchases, licenses, and products.
             </p>
           </div>
         </div>
       </section>
 
-      <NotificationsList
-        notifications={
-          items
-        }
-      />
+      <NotificationsList notifications={items} />
     </div>
   );
 }
