@@ -1,16 +1,21 @@
+
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   BadgePercent,
   CalendarDays,
+  Check,
   CheckCircle2,
+  ChevronDown,
   CircleDollarSign,
   Hash,
   Info,
+  Search,
   TicketPercent,
   TriangleAlert,
+  X,
 } from "lucide-react";
 
 export type CouponFormData = {
@@ -26,10 +31,15 @@ export type CouponFormData = {
   creem_discount_id: string | null;
 };
 
+type ProductOption = {
+  id: string;
+  name: string;
+};
+
 type Props = {
   coupon: CouponFormData;
   mode: "create" | "edit";
-  products: { id: string; name: string }[];
+  products: ProductOption[];
   selectedProductIds: string[];
   action:
     | ((formData: FormData) => void)
@@ -63,6 +73,7 @@ function amountForDisplay(
   currency: string
 ): string {
   const decimals = currencyDecimals(currency);
+
   return (amount / 10 ** decimals).toFixed(decimals);
 }
 
@@ -87,14 +98,74 @@ export default function CouponForm({
     selectedProductIds
   );
 
+  const [productDropdownOpen, setProductDropdownOpen] =
+    useState(false);
+
+  const [productSearch, setProductSearch] = useState("");
+
   const editing = mode === "edit";
   const mapped = Boolean(coupon.creem_discount_id);
 
   const decimals = currencyDecimals(currency);
+
   const fixedStep =
     decimals === 0
       ? "1"
       : `0.${"0".repeat(decimals - 1)}1`;
+
+  const filteredProducts = useMemo(() => {
+    const query = productSearch.trim().toLowerCase();
+
+    if (!query) return products;
+
+    return products.filter((product) =>
+      product.name.toLowerCase().includes(query)
+    );
+  }, [products, productSearch]);
+
+  const selectedSet = useMemo(
+    () => new Set(selected),
+    [selected]
+  );
+
+  const allSelected =
+    products.length > 0 &&
+    products.every((product) => selectedSet.has(product.id));
+
+  const selectedNames = products
+    .filter((product) => selectedSet.has(product.id))
+    .map((product) => product.name);
+
+  const selectionLabel =
+    selectedNames.length === 0
+      ? "Select products"
+      : allSelected
+        ? `All products (${products.length})`
+        : selectedNames.length === 1
+          ? selectedNames[0]
+          : `${selectedNames.length} products selected`;
+
+  function toggleProduct(id: string) {
+    if (mapped) return;
+
+    setSelected((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id]
+    );
+  }
+
+  function selectAllProducts() {
+    if (mapped) return;
+
+    setSelected(products.map((product) => product.id));
+  }
+
+  function clearProducts() {
+    if (mapped) return;
+
+    setSelected([]);
+  }
 
   return (
     <form action={action} className="space-y-6">
@@ -110,8 +181,8 @@ export default function CouponForm({
             </h2>
 
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Configure a discount customers can use
-              during checkout.
+              Configure a discount customers can use during
+              checkout.
             </p>
           </div>
         </div>
@@ -136,10 +207,7 @@ export default function CouponForm({
           </div>
 
           <div>
-            <label
-              htmlFor="discountType"
-              className={label}
-            >
+            <label htmlFor="discountType" className={label}>
               Discount type
             </label>
 
@@ -167,19 +235,14 @@ export default function CouponForm({
           </div>
 
           <div className="md:col-span-2">
-            <label
-              htmlFor="description"
-              className={label}
-            >
+            <label htmlFor="description" className={label}>
               Description
             </label>
 
             <textarea
               id="description"
               name="description"
-              defaultValue={
-                coupon.description ?? ""
-              }
+              defaultValue={coupon.description ?? ""}
               rows={3}
               maxLength={500}
               placeholder="Optional internal description"
@@ -239,8 +302,7 @@ export default function CouponForm({
                   : fixedStep
               }
               defaultValue={
-                discountType ===
-                coupon.discount_type
+                discountType === coupon.discount_type
                   ? discountType === "percentage"
                     ? coupon.amount
                     : amountForDisplay(
@@ -264,10 +326,7 @@ export default function CouponForm({
 
           {discountType === "flat" && (
             <div>
-              <label
-                htmlFor="currency"
-                className={label}
-              >
+              <label htmlFor="currency" className={label}>
                 Currency
               </label>
 
@@ -310,10 +369,7 @@ export default function CouponForm({
 
         <div className="mt-6 grid gap-5 md:grid-cols-2">
           <div>
-            <label
-              htmlFor="expiresAt"
-              className={label}
-            >
+            <label htmlFor="expiresAt" className={label}>
               Expiration
             </label>
 
@@ -321,9 +377,7 @@ export default function CouponForm({
               id="expiresAt"
               name="expiresAt"
               type="datetime-local"
-              defaultValue={
-                coupon.expires_at ?? ""
-              }
+              defaultValue={coupon.expires_at ?? ""}
               className={input}
             />
 
@@ -333,10 +387,7 @@ export default function CouponForm({
           </div>
 
           <div>
-            <label
-              htmlFor="usageLimit"
-              className={label}
-            >
+            <label htmlFor="usageLimit" className={label}>
               Usage limit
             </label>
 
@@ -349,9 +400,7 @@ export default function CouponForm({
                 type="number"
                 min="1"
                 step="1"
-                defaultValue={
-                  coupon.usage_limit ?? ""
-                }
+                defaultValue={coupon.usage_limit ?? ""}
                 placeholder="Unlimited"
                 className={`${input} pl-10`}
               />
@@ -377,8 +426,8 @@ export default function CouponForm({
               </p>
 
               <p className="mt-1 text-xs text-[var(--muted)]">
-                Status changes are managed from
-                the coupon list.
+                Status changes are managed from the coupon
+                list.
               </p>
             </div>
           ) : (
@@ -402,84 +451,216 @@ export default function CouponForm({
       </section>
 
       <section className={section}>
-        <h2 className="font-semibold">
-          Applicable products
-        </h2>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+            <TicketPercent className="h-5 w-5" />
+          </div>
 
-        <p className="mt-2 text-sm text-[var(--muted)]">
-          Choose which products can use this coupon.
-          To change an existing synchronized coupon,
-          disable it first, save, then enable it again.
-        </p>
+          <div>
+            <h2 className="font-semibold">
+              Applicable products
+            </h2>
 
-        <div className="mt-4 space-y-3">
-          <label className="flex gap-3 text-sm font-medium">
-            <input
-              type="checkbox"
-              checked={
-                products.length > 0 &&
-                selected.length === products.length
-              }
-              disabled={mapped}
-              onChange={(event) =>
-                setSelected(
-                  event.target.checked
-                    ? products.map(
-                        (product) => product.id
-                      )
-                    : []
-                )
-              }
-            />
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Select any one product, multiple products,
+              or all products. There is no fixed product
+              selection limit.
+            </p>
+          </div>
+        </div>
 
-            Select all products
+        <div className="mt-5">
+          <label
+            htmlFor="product-picker"
+            className={label}
+          >
+            Products eligible for this coupon
           </label>
 
-          {products.map((product) => (
-            <label
-              key={product.id}
-              className="flex gap-3 text-sm"
+          <div className="relative">
+            <button
+              id="product-picker"
+              type="button"
+              disabled={mapped}
+              aria-expanded={productDropdownOpen}
+              aria-controls="coupon-product-options"
+              onClick={() =>
+                setProductDropdownOpen((open) => !open)
+              }
+              className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm transition-colors hover:border-[var(--primary)] ${
+                mapped
+                  ? "cursor-not-allowed opacity-60"
+                  : "cursor-pointer"
+              }`}
             >
-              <input
-                type="checkbox"
-                name="productIds"
-                value={product.id}
-                disabled={mapped}
-                checked={selected.includes(
-                  product.id
-                )}
-                onChange={(event) =>
-                  setSelected((current) =>
-                    event.target.checked
-                      ? [
-                          ...current,
-                          product.id,
-                        ]
-                      : current.filter(
-                          (id) =>
-                            id !== product.id
-                        )
-                  )
-                }
-              />
+              <span className="min-w-0 flex-1 truncate">
+                {selectionLabel}
+              </span>
 
-              {product.name}
-            </label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 transition-transform ${
+                  productDropdownOpen
+                    ? "rotate-180"
+                    : ""
+                }`}
+              />
+            </button>
+
+            {productDropdownOpen && !mapped && (
+              <div
+                id="coupon-product-options"
+                className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl"
+              >
+                <div className="border-b border-[var(--border-light)] p-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
+
+                    <input
+                      type="search"
+                      value={productSearch}
+                      onChange={(event) =>
+                        setProductSearch(event.target.value)
+                      }
+                      placeholder="Search products..."
+                      className="h-10 w-full rounded-lg border border-[var(--border)] bg-white pl-10 pr-3 text-sm outline-none focus:border-[var(--primary)]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 border-b border-[var(--border-light)] px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={selectAllProducts}
+                    className="text-xs font-semibold text-[var(--primary)] hover:underline"
+                  >
+                    Select all
+                  </button>
+
+                  <span className="text-xs text-[var(--muted)]">
+                    {selected.length} selected
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={clearProducts}
+                    className="text-xs font-semibold text-red-600 hover:underline"
+                  >
+                    Clear all
+                  </button>
+                </div>
+
+                <div className="max-h-64 overflow-y-auto p-2">
+                  {filteredProducts.length === 0 ? (
+                    <p className="px-3 py-5 text-center text-sm text-[var(--muted)]">
+                      No products found.
+                    </p>
+                  ) : (
+                    filteredProducts.map((product) => {
+                      const isSelected =
+                        selectedSet.has(product.id);
+
+                      return (
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={() =>
+                            toggleProduct(product.id)
+                          }
+                          className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-[var(--surface-hover)]"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {product.name}
+                          </span>
+
+                          <span
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                              isSelected
+                                ? "border-[var(--primary)] bg-[var(--primary)] text-white"
+                                : "border-[var(--border)]"
+                            }`}
+                          >
+                            {isSelected && (
+                              <Check className="h-3.5 w-3.5" />
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="border-t border-[var(--border-light)] p-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setProductDropdownOpen(false)
+                    }
+                    className="w-full rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {selectedNames.length > 0 && !allSelected && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {products
+                .filter((product) =>
+                  selectedSet.has(product.id)
+                )
+                .map((product) => (
+                  <span
+                    key={product.id}
+                    className="inline-flex max-w-full items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs"
+                  >
+                    <span className="max-w-48 truncate">
+                      {product.name}
+                    </span>
+
+                    {!mapped && (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${product.name}`}
+                        onClick={() =>
+                          toggleProduct(product.id)
+                        }
+                        className="text-[var(--muted)] hover:text-red-600"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+            </div>
+          )}
+
+          {selected.map((id) => (
+            <input
+              key={id}
+              type="hidden"
+              name="productIds"
+              value={id}
+            />
           ))}
 
-          {mapped &&
-            selected.map((id) => (
-              <input
-                key={id}
-                type="hidden"
-                name="productIds"
-                value={id}
-              />
-            ))}
-
           {products.length === 0 && (
-            <p className="text-sm text-red-600">
+            <p className="mt-3 text-sm text-red-600">
               No active products connected to Creem.
+            </p>
+          )}
+
+          {selected.length === 0 && (
+            <p className="mt-3 text-sm text-amber-700">
+              Choose at least one product before saving.
+            </p>
+          )}
+
+          {mapped && (
+            <p className="mt-3 text-xs text-[var(--muted)]">
+              Disable this coupon before changing its
+              applicable products.
             </p>
           )}
         </div>
@@ -510,9 +691,9 @@ export default function CouponForm({
 
             <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
               {!editing
-                ? "Creating an active coupon also creates its Creem discount."
+                ? "Creating an active coupon also creates its Creem discount for the selected products."
                 : mapped
-                  ? "The discount ID is stored automatically. Financial-rule edits are restricted until synchronization is supported."
+                  ? "This coupon is connected to Creem. Disable it before changing discount rules or eligible products."
                   : "This coupon cannot be used at checkout until its Creem mapping is created."}
             </p>
 
@@ -535,7 +716,8 @@ export default function CouponForm({
 
         <button
           type="submit"
-          className="inline-flex h-11 items-center rounded-xl bg-[var(--primary)] px-6 text-sm font-semibold text-white"
+          disabled={selected.length === 0}
+          className="inline-flex h-11 items-center rounded-xl bg-[var(--primary)] px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {editing ? "Save changes" : "Create coupon"}
         </button>
