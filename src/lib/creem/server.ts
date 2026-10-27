@@ -43,7 +43,9 @@ function baseUrl(): string {
     return "https://api.creem.io";
   }
 
-  throw new Error("CREEM_ENVIRONMENT must be test or production.");
+  throw new Error(
+    "CREEM_ENVIRONMENT must be test or production."
+  );
 }
 
 async function creemRequest(
@@ -53,7 +55,9 @@ async function creemRequest(
   const key = process.env.CREEM_API_KEY;
 
   if (!key) {
-    throw new Error("CREEM_API_KEY is not configured.");
+    throw new Error(
+      "CREEM_API_KEY is not configured."
+    );
   }
 
   const response = await fetch(`${baseUrl()}${path}`, {
@@ -72,10 +76,16 @@ async function creemRequest(
     await response.json().catch(() => null);
 
   if (!response.ok) {
-    console.error("Creem request failed:", {
-      path,
-      status: response.status,
-    });
+    const expectedMissingDiscount =
+      response.status === 404 &&
+      path.startsWith("/v1/discounts?");
+
+    if (!expectedMissingDiscount) {
+      console.error("Creem request failed:", {
+        path,
+        status: response.status,
+      });
+    }
 
     throw new Error(
       `Creem API request failed (${response.status}).`
@@ -85,7 +95,9 @@ async function creemRequest(
   const data = record(payload);
 
   if (!data) {
-    throw new Error("Creem returned an invalid response.");
+    throw new Error(
+      "Creem returned an invalid response."
+    );
   }
 
   return data;
@@ -117,7 +129,9 @@ export type CreateCreemDiscountInput = {
   productIds: string[];
 };
 
-function parseDiscount(data: RecordData): CreemDiscount {
+function parseDiscount(
+  data: RecordData
+): CreemDiscount {
   return {
     id: requiredText(data.id, "discount ID"),
     code: requiredText(data.code, "discount code"),
@@ -153,9 +167,12 @@ function parseDiscount(data: RecordData): CreemDiscount {
       typeof data.redeem_count === "number"
         ? data.redeem_count
         : 0,
-    products: Array.isArray(data.applies_to_products)
+    products: Array.isArray(
+      data.applies_to_products
+    )
       ? data.applies_to_products.filter(
-          (id): id is string => typeof id === "string"
+          (id): id is string =>
+            typeof id === "string"
         )
       : [],
   };
@@ -166,7 +183,9 @@ export async function createCreemDiscount(
 ): Promise<CreemDiscount> {
   const code = input.code.trim().toUpperCase();
   const name = input.name.trim();
-  const productIds = [...new Set(input.productIds)];
+  const productIds = [
+    ...new Set(input.productIds),
+  ];
 
   if (!/^[A-Z0-9]{1,32}$/.test(code)) {
     throw new Error("Invalid discount code.");
@@ -179,82 +198,119 @@ export async function createCreemDiscount(
   if (
     !productIds.length ||
     productIds.some(
-      (id) => !/^prod_[A-Za-z0-9_-]+$/.test(id)
+      (id) =>
+        !/^prod_[A-Za-z0-9_-]+$/.test(id)
     )
   ) {
-    throw new Error("Valid Creem products are required.");
+    throw new Error(
+      "Valid Creem products are required."
+    );
   }
 
   if (
     input.maxRedemptions != null &&
-    (!Number.isSafeInteger(input.maxRedemptions) ||
+    (!Number.isSafeInteger(
+      input.maxRedemptions
+    ) ||
       input.maxRedemptions <= 0)
   ) {
-    throw new Error("Invalid redemption limit.");
+    throw new Error(
+      "Invalid redemption limit."
+    );
   }
 
   if (
     input.expiryDate &&
-    !Number.isFinite(new Date(input.expiryDate).getTime())
+    !Number.isFinite(
+      new Date(input.expiryDate).getTime()
+    )
   ) {
-    throw new Error("Invalid discount expiry.");
+    throw new Error(
+      "Invalid discount expiry."
+    );
   }
 
   if (input.type === "percentage") {
     if (
       input.percentage === undefined ||
-      !Number.isInteger(input.percentage) ||
+      !Number.isInteger(
+        input.percentage
+      ) ||
       input.percentage < 1 ||
       input.percentage > 100
     ) {
-      throw new Error("Invalid percentage discount.");
+      throw new Error(
+        "Invalid percentage discount."
+      );
     }
   } else {
     if (
       input.amount === undefined ||
-      !Number.isSafeInteger(input.amount) ||
+      !Number.isSafeInteger(
+        input.amount
+      ) ||
       input.amount <= 0 ||
       !input.currency ||
-      !/^[A-Z]{3}$/.test(input.currency.toUpperCase())
+      !/^[A-Z]{3}$/.test(
+        input.currency.toUpperCase()
+      )
     ) {
-      throw new Error("Invalid fixed discount.");
+      throw new Error(
+        "Invalid fixed discount."
+      );
     }
   }
 
-  const payload = await creemRequest("/v1/discounts", {
-    method: "POST",
-    body: JSON.stringify({
-      name,
-      code,
-      type: input.type,
-      duration: "once",
-      applies_to_products: productIds,
-      ...(input.type === "percentage"
-        ? { percentage: input.percentage }
-        : {
-            amount: input.amount,
-            currency: input.currency?.toUpperCase(),
-          }),
-      ...(input.maxRedemptions != null
-        ? { max_redemptions: input.maxRedemptions }
-        : {}),
-      ...(input.expiryDate
-        ? {
-            expiry_date: new Date(
-              input.expiryDate
-            ).toISOString(),
-          }
-        : {}),
-    }),
-  });
+  const payload = await creemRequest(
+    "/v1/discounts",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        code,
+        type: input.type,
+        duration: "once",
+        applies_to_products: productIds,
+        ...(input.type === "percentage"
+          ? {
+              percentage:
+                input.percentage,
+            }
+          : {
+              amount: input.amount,
+              currency:
+                input.currency?.toUpperCase(),
+            }),
+        ...(input.maxRedemptions != null
+          ? {
+              max_redemptions:
+                input.maxRedemptions,
+            }
+          : {}),
+        ...(input.expiryDate
+          ? {
+              expiry_date:
+                new Date(
+                  input.expiryDate
+                ).toISOString(),
+            }
+          : {}),
+      }),
+    }
+  );
 
   const discount = parseDiscount(payload);
 
   if (
-    !/^dis_[A-Za-z0-9_-]+$/.test(discount.id) ||
-    discount.code.toUpperCase() !== code
+    !/^dis_[A-Za-z0-9_-]+$/.test(
+      discount.id
+    ) ||
+    discount.code.toUpperCase() !==
+      code
   ) {
-    throw new Error("Creem returned an unexpected discount.");
+    throw new Error(
+      "Creem returned an unexpected discount."
+    );
   }
 
   return discount;
@@ -263,10 +319,18 @@ export async function createCreemDiscount(
 export async function getCreemDiscountByCode(
   code: string
 ): Promise<CreemDiscount> {
-  const normalized = code.trim().toUpperCase();
+  const normalized = code
+    .trim()
+    .toUpperCase();
 
-  if (!/^[A-Z0-9]{1,32}$/.test(normalized)) {
-    throw new Error("Invalid discount code.");
+  if (
+    !/^[A-Z0-9]{1,32}$/.test(
+      normalized
+    )
+  ) {
+    throw new Error(
+      "Invalid discount code."
+    );
   }
 
   const data = await creemRequest(
@@ -294,8 +358,14 @@ export type CreemTransaction = {
 export async function getCreemTransaction(
   transactionId: string
 ): Promise<CreemTransaction> {
-  if (!/^tran_[A-Za-z0-9_-]+$/.test(transactionId)) {
-    throw new Error("Invalid Creem transaction ID.");
+  if (
+    !/^tran_[A-Za-z0-9_-]+$/.test(
+      transactionId
+    )
+  ) {
+    throw new Error(
+      "Invalid Creem transaction ID."
+    );
   }
 
   const result = await creemRequest(
@@ -304,10 +374,15 @@ export async function getCreemTransaction(
     )}`
   );
 
-  const id = requiredText(result.id, "transaction ID");
+  const id = requiredText(
+    result.id,
+    "transaction ID"
+  );
 
   if (id !== transactionId) {
-    throw new Error("Creem transaction ID mismatch.");
+    throw new Error(
+      "Creem transaction ID mismatch."
+    );
   }
 
   return {
@@ -321,8 +396,10 @@ export async function getCreemTransaction(
     customerId:
       typeof result.customer === "string"
         ? result.customer
-        : typeof record(result.customer)?.id === "string"
-          ? (record(result.customer)?.id as string)
+        : typeof record(result.customer)?.id ===
+            "string"
+          ? (record(result.customer)
+              ?.id as string)
           : null,
     currency: requiredText(
       result.currency,
@@ -361,66 +438,108 @@ export async function getCreemTransaction(
   };
 }
 
-export async function createCreemCheckout(input: {
-  productId: string;
-  orderNumber: string;
-  customerEmail: string;
-  successUrl: string;
-  metadata: Record<string, string>;
-  discountCode?: string | null;
-}): Promise<{
+export async function createCreemCheckout(
+  input: {
+    productId: string;
+    orderNumber: string;
+    customerEmail: string;
+    successUrl: string;
+    metadata: Record<string, string>;
+    discountCode?: string | null;
+  }
+): Promise<{
   id: string;
   checkoutUrl: string;
 }> {
-  if (!/^prod_[A-Za-z0-9_-]+$/.test(input.productId)) {
-    throw new Error("Invalid Creem product ID.");
+  if (
+    !/^prod_[A-Za-z0-9_-]+$/.test(
+      input.productId
+    )
+  ) {
+    throw new Error(
+      "Invalid Creem product ID."
+    );
   }
 
-  if (!input.orderNumber || !input.customerEmail) {
-    throw new Error("Missing checkout information.");
+  if (
+    !input.orderNumber ||
+    !input.customerEmail
+  ) {
+    throw new Error(
+      "Missing checkout information."
+    );
   }
 
-  const payload = await creemRequest("/v1/checkouts", {
-    method: "POST",
-    body: JSON.stringify({
-      product_id: input.productId,
-      request_id: input.orderNumber,
-      units: 1,
-      customer: {
-        email: input.customerEmail,
-      },
-      success_url: input.successUrl,
-      metadata: input.metadata,
-      ...(input.discountCode
-        ? { discount_code: input.discountCode }
-        : {}),
-    }),
-  });
+  const payload = await creemRequest(
+    "/v1/checkouts",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        product_id:
+          input.productId,
+        request_id:
+          input.orderNumber,
+        units: 1,
+        customer: {
+          email:
+            input.customerEmail,
+        },
+        success_url:
+          input.successUrl,
+        metadata:
+          input.metadata,
+        ...(input.discountCode
+          ? {
+              discount_code:
+                input.discountCode,
+            }
+          : {}),
+      }),
+    }
+  );
 
-  const id = requiredText(payload.id, "checkout ID");
+  const id = requiredText(
+    payload.id,
+    "checkout ID"
+  );
+
   const url = requiredText(
     payload.checkout_url,
     "checkout URL"
   );
 
-  if (!/^ch_[A-Za-z0-9_-]+$/.test(id)) {
-    throw new Error("Invalid Creem checkout ID.");
+  if (
+    !/^ch_[A-Za-z0-9_-]+$/.test(
+      id
+    )
+  ) {
+    throw new Error(
+      "Invalid Creem checkout ID."
+    );
   }
 
-  const checkoutUrl = new URL(url);
+  const checkoutUrl = new URL(
+    url
+  );
 
   if (
     checkoutUrl.protocol !== "https:" ||
     !(
-      checkoutUrl.hostname === "creem.io" ||
-      checkoutUrl.hostname.endsWith(".creem.io")
+      checkoutUrl.hostname ===
+        "creem.io" ||
+      checkoutUrl.hostname.endsWith(
+        ".creem.io"
+      )
     )
   ) {
-    throw new Error("Unexpected Creem checkout URL.");
+    throw new Error(
+      "Unexpected Creem checkout URL."
+    );
   }
 
   return {
     id,
-    checkoutUrl: checkoutUrl.toString(),
+    checkoutUrl:
+      checkoutUrl.toString(),
   };
 }
