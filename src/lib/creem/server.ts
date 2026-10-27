@@ -1,3 +1,4 @@
+
 import "server-only";
 
 type RecordData = Record<string, unknown>;
@@ -76,7 +77,9 @@ async function creemRequest(
       status: response.status,
     });
 
-    throw new Error(`Creem API request failed (${response.status}).`);
+    throw new Error(
+      `Creem API request failed (${response.status}).`
+    );
   }
 
   const data = record(payload);
@@ -237,7 +240,9 @@ export async function createCreemDiscount(
         : {}),
       ...(input.expiryDate
         ? {
-            expiry_date: new Date(input.expiryDate).toISOString(),
+            expiry_date: new Date(
+              input.expiryDate
+            ).toISOString(),
           }
         : {}),
     }),
@@ -265,7 +270,9 @@ export async function getCreemDiscountByCode(
   }
 
   const data = await creemRequest(
-    `/v1/discounts?discount_code=${encodeURIComponent(normalized)}`
+    `/v1/discounts?discount_code=${encodeURIComponent(
+      normalized
+    )}`
   );
 
   return parseDiscount(data);
@@ -292,7 +299,9 @@ export async function getCreemTransaction(
   }
 
   const result = await creemRequest(
-    `/v1/transactions?transaction_id=${encodeURIComponent(transactionId)}`
+    `/v1/transactions?transaction_id=${encodeURIComponent(
+      transactionId
+    )}`
   );
 
   const id = requiredText(result.id, "transaction ID");
@@ -319,17 +328,32 @@ export async function getCreemTransaction(
       result.currency,
       "transaction currency"
     ).toUpperCase(),
-    status: requiredText(result.status, "transaction status"),
-    type: requiredText(result.type, "transaction type"),
-    amount: nonnegativeInteger(result.amount, "amount"),
-    discountAmount: nonnegativeInteger(
-      result.discount_amount,
-      "discount amount"
+    status: requiredText(
+      result.status,
+      "transaction status"
     ),
-    taxAmount: nonnegativeInteger(
-      result.tax_amount,
-      "tax amount"
+    type: requiredText(
+      result.type,
+      "transaction type"
     ),
+    amount: nonnegativeInteger(
+      result.amount,
+      "amount"
+    ),
+    discountAmount:
+      result.discount_amount == null
+        ? 0
+        : nonnegativeInteger(
+            result.discount_amount,
+            "discount amount"
+          ),
+    taxAmount:
+      result.tax_amount == null
+        ? 0
+        : nonnegativeInteger(
+            result.tax_amount,
+            "tax amount"
+          ),
     amountPaid: nonnegativeInteger(
       result.amount_paid,
       "amount paid"
@@ -344,7 +368,10 @@ export async function createCreemCheckout(input: {
   successUrl: string;
   metadata: Record<string, string>;
   discountCode?: string | null;
-}): Promise<{ id: string; checkoutUrl: string }> {
+}): Promise<{
+  id: string;
+  checkoutUrl: string;
+}> {
   if (!/^prod_[A-Za-z0-9_-]+$/.test(input.productId)) {
     throw new Error("Invalid Creem product ID.");
   }
