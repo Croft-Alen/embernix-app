@@ -1,3 +1,4 @@
+
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
@@ -405,6 +406,121 @@ async function fulfill(
   return result;
 }
 
+async function handleCreemRefund(
+  eventId: string,
+  payload: Data
+): Promise<string> {
+  const refundId = text(payload.id);
+  const transactionId = idOf(payload.transaction);
+  const refundAmount = cents(payload.refund_amount);
+  const refundCurrency = text(payload.refund_currency)?.toUpperCase();
+
+  if (
+    !refundId ||
+    !refundId.startsWith("ref_") ||
+    !transactionId ||
+    !transactionId.startsWith("tran_") ||
+    refundAmount === null ||
+    refundAmount === 0 ||
+    !refundCurrency ||
+    !/^[A-Z]{3}$/.test(refundCurrency)
+  ) {
+    throw new Error("Invalid Creem refund payload.");
+  }
+
+  if (payload.status !== "succeeded") {
+    console.warn("Creem refund is not completed:", {
+      eventId,
+      refundId,
+      status: payload.status,
+    });
+
+    return "refund_not_completed";
+  }
+
+  const transaction = await getCreemTransaction(transactionId);
+
+  if (
+    transaction.type !== "payment" ||
+    transaction.currency !== refundCurrency
+  ) {
+    throw new Error("Refund transaction mismatch.");
+  }
+
+  if (transaction.status === "partially_refunded") {
+    console.warn("Partial Creem refund requires review:", {
+      eventId,
+      refundId,
+      transactionId,
+    });
+
+    return "partial_refund_review";
+  }
+
+  if (transaction.status !== "refunded") {
+    throw new Error(
+      "Creem transaction does not confirm a full refund."
+    );
+  }
+
+  const admin = createAdminClient();
+
+  const { data: localOrder, error: orderError } = await admin
+    .from("orders")
+    .select(
+      "id,order_number,creem_order_id,creem_customer_id,total_cents,currency"
+    )
+    .eq("creem_order_id", transaction.orderId)
+    .eq("payment_provider", "creem")
+    .maybeSingle();
+
+  if (orderError || !localOrder) {
+    throw new Error("Refund order not found.");
+  }
+
+  const paidCents = Number(localOrder.total_cents);
+
+  if (
+    !Number.isSafeInteger(paidCents) ||
+    paidCents <= 0 ||
+    refundAmount !== paidCents ||
+    transaction.amountPaid !== paidCents ||
+    transaction.currency !== localOrder.currency ||
+    !transaction.customerId ||
+    transaction.customerId !== localOrder.creem_customer_id
+  ) {
+    throw new Error(
+      "Refund amount or customer does not match the paid order."
+    );
+  }
+
+  const { data: result, error: refundError } = await admin.rpc(
+    "complete_creem_product_refund",
+    {
+      p_event_id: eventId,
+      p_creem_order_id: transaction.orderId,
+      p_creem_customer_id: transaction.customerId,
+      p_refund_cents: refundAmount,
+      p_currency: refundCurrency,
+    }
+  );
+
+  if (refundError) {
+    console.error("Creem refund database error:", refundError);
+    throw new Error("Refund reconciliation failed.");
+  }
+
+  if (
+    result !== "completed" &&
+    result !== "duplicate" &&
+    result !== "already_refunded"
+  ) {
+    throw new Error("Unexpected refund processing result.");
+  }
+
+  return result;
+}
+
 export async function POST(request: Request) {
   const secret = process.env.CREEM_WEBHOOK_SECRET;
 
@@ -457,13 +573,40 @@ export async function POST(request: Request) {
     );
   }
 
-  if (event.eventType !== "checkout.completed") {
-    if (
-      event.eventType === "refund.created" ||
-      event.eventType === "dispute.created"
-    ) {
+  if (event.eventType === "refund.created") {
+    try {
+      const result = await handleCreemRefund(
+        event.id as string,
+        event.object as Data
+      );
+
+      return NextResponse.json({
+        received: true,
+        handled:
+          result === "completed" ||
+          result === "duplicate" ||
+          result === "already_refunded",
+        result,
+      });
+    } catch (error) {
       console.error(
-        "Creem payment reversal requires review:",
+        "Creem refund processing failed:",
+        error
+      );
+
+      return NextResponse.json(
+        {
+          error: "Refund reconciliation failed.",
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (event.eventType !== "checkout.completed") {
+    if (event.eventType === "dispute.created") {
+      console.error(
+        "Creem dispute requires review:",
         {
           eventId: event.id,
           eventType: event.eventType,

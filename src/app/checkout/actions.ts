@@ -151,7 +151,7 @@ export async function prepareCheckoutOrder(
   if (ownership?.status === "revoked") {
     return {
       success: false,
-      error: "Your product access has been revoked. Contact support.",
+      error: "Product access has been revoked. Contact support.",
     };
   }
 
@@ -171,6 +171,11 @@ export async function prepareCheckoutOrder(
       error: "This license is not available for checkout.",
     };
   }
+
+  const licenseCheckoutKind =
+    ownership?.status === "renewal_required"
+      ? "renewal"
+      : "purchase";
 
   const { data: pendingOrders, error: pendingError } =
     await admin
@@ -215,11 +220,9 @@ export async function prepareCheckoutOrder(
       )
       .eq("order_id", order.id);
 
-    if (itemsError || !items) {
-      continue;
-    }
-
     if (
+      itemsError ||
+      !items ||
       items.length !== 1 ||
       items[0].item_type !== "product" ||
       items[0].product_id !== product.id ||
@@ -235,6 +238,7 @@ export async function prepareCheckoutOrder(
       await admin
         .from("orders")
         .update({
+          license_checkout_kind: licenseCheckoutKind,
           terms_accepted_at: now,
           terms_version: TERMS_VERSION,
           updated_at: now,
@@ -249,7 +253,14 @@ export async function prepareCheckoutOrder(
         .select("id")
         .maybeSingle();
 
-    if (!refreshError && refreshed) {
+    if (refreshError) {
+      console.error(
+        "Pending order refresh failed:",
+        refreshError
+      );
+    }
+
+    if (refreshed) {
       return {
         success: true,
         orderNumber: order.order_number,
@@ -269,6 +280,7 @@ export async function prepareCheckoutOrder(
       order_number: orderNumber,
       status: "pending",
       payment_status: "unpaid",
+      license_checkout_kind: licenseCheckoutKind,
       currency: product.currency,
       subtotal_cents: price,
       total_cents: price,
@@ -281,7 +293,10 @@ export async function prepareCheckoutOrder(
     });
 
   if (orderError) {
-    console.error("Order creation failed:", orderError);
+    console.error(
+      "Order creation failed:",
+      orderError
+    );
 
     return {
       success: false,
@@ -301,7 +316,10 @@ export async function prepareCheckoutOrder(
     });
 
   if (itemError) {
-    console.error("Order item creation failed:", itemError);
+    console.error(
+      "Order item creation failed:",
+      itemError
+    );
 
     const { error: cleanupError } = await admin
       .from("orders")
@@ -313,7 +331,10 @@ export async function prepareCheckoutOrder(
       .is("creem_checkout_id", null);
 
     if (cleanupError) {
-      console.error("Order cleanup failed:", cleanupError);
+      console.error(
+        "Order cleanup failed:",
+        cleanupError
+      );
     }
 
     return {
