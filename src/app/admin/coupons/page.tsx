@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -6,15 +7,22 @@ import {
   Plus,
   RefreshCw,
   TicketPercent,
+  Trash2,
   XCircle,
 } from "lucide-react";
+import { redirect } from "next/navigation";
 
+import { getCreemDiscountByCode } from "@/lib/creem/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 import {
   syncCoupon,
   toggleCouponStatus,
 } from "./actions";
+import { deleteCoupon } from "./delete-action";
+
+export const dynamic = "force-dynamic";
 
 type Coupon = {
   id: string;
@@ -29,6 +37,12 @@ type Coupon = {
   creem_discount_id: string | null;
   created_at: string;
 };
+
+type RemoteStatus =
+  | "connected"
+  | "missing"
+  | "mismatch"
+  | "unknown";
 
 type Props = {
   searchParams: Promise<{
@@ -51,7 +65,8 @@ function discountLabel(coupon: Coupon): string {
     });
 
     const decimals =
-      formatter.resolvedOptions().maximumFractionDigits ?? 2;
+      formatter.resolvedOptions()
+        .maximumFractionDigits ?? 2;
 
     return formatter.format(
       coupon.amount / 10 ** decimals
@@ -79,10 +94,90 @@ function expired(value: string | null): boolean {
 
   const time = new Date(value).getTime();
 
-  return !Number.isFinite(time) || time <= Date.now();
+  return (
+    !Number.isFinite(time) ||
+    time <= Date.now()
+  );
 }
 
-function getStatus(coupon: Coupon) {
+async function checkCreemStatus(
+  coupon: Coupon
+): Promise<RemoteStatus> {
+  if (!coupon.creem_discount_id) {
+    return "missing";
+  }
+
+  try {
+    const remote = await getCreemDiscountByCode(
+      coupon.code
+    );
+
+    if (
+      remote.id !== coupon.creem_discount_id ||
+      remote.code.toUpperCase() !==
+        coupon.code.toUpperCase()
+    ) {
+      return "mismatch";
+    }
+
+    return remote.status.toLowerCase() === "active"
+      ? "connected"
+      : "mismatch";
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("(404)")
+    ) {
+      return "missing";
+    }
+
+    console.error(
+      "Creem coupon verification failed:",
+      coupon.code,
+      error
+    );
+
+    return "unknown";
+  }
+}
+
+function getStatus(
+  coupon: Coupon,
+  remoteStatus?: RemoteStatus
+) {
+  if (
+    coupon.creem_discount_id &&
+    remoteStatus === "missing"
+  ) {
+    return {
+      text: "Missing in Creem",
+      className: "bg-red-50 text-red-700",
+      Icon: AlertTriangle,
+    };
+  }
+
+  if (
+    coupon.creem_discount_id &&
+    remoteStatus === "mismatch"
+  ) {
+    return {
+      text: "Creem mismatch",
+      className: "bg-red-50 text-red-700",
+      Icon: AlertTriangle,
+    };
+  }
+
+  if (
+    coupon.creem_discount_id &&
+    remoteStatus === "unknown"
+  ) {
+    return {
+      text: "Creem check failed",
+      className: "bg-amber-50 text-amber-700",
+      Icon: AlertTriangle,
+    };
+  }
+
   if (!coupon.active) {
     return {
       text: "Inactive",
@@ -108,7 +203,7 @@ function getStatus(coupon: Coupon) {
   }
 
   return {
-    text: "Active locally",
+    text: "Active",
     className: "bg-green-50 text-green-700",
     Icon: CheckCircle2,
   };
@@ -118,6 +213,26 @@ export default async function AdminCouponsPage({
   searchParams,
 }: Props) {
   const query = await searchParams;
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const { data: currentAdmin } = await supabase
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!currentAdmin) {
+    redirect("/dashboard");
+  }
+
   const admin = createAdminClient();
 
   const { data, error } = await admin
@@ -125,14 +240,55 @@ export default async function AdminCouponsPage({
     .select(
       "id,code,description,discount_type,amount,currency,active,expires_at,usage_limit,creem_discount_id,created_at"
     )
-    .order("created_at", { ascending: false });
+    .order("created_at", {
+      ascending: false,
+    });
 
   const coupons = (data ?? []) as Coupon[];
 
+  const remoteStatuses = new Map<
+    string,
+    RemoteStatus
+  >();
+
+  const mappedCoupons = coupons.filter(
+    (coupon) => coupon.creem_discount_id
+  );
+
+  for (
+    let index = 0;
+    index < mappedCoupons.length;
+    index += 5
+  ) {
+    const batch = mappedCoupons.slice(
+      index,
+      index + 5
+    );
+
+    const results = await Promise.all(
+      batch.map(async (coupon) => ({
+        id: coupon.id,
+        status: await checkCreemStatus(coupon),
+      }))
+    );
+
+    for (const result of results) {
+      remoteStatuses.set(
+        result.id,
+        result.status
+      );
+    }
+  }
+
   const successMessages: Record<string, string> = {
-    synced: "Coupon synchronized with Creem successfully.",
-    enabled: "Coupon enabled and connected to Creem.",
-    disabled: "Coupon disabled and its Creem mapping cleared.",
+    synced:
+      "Coupon synchronized with Creem successfully.",
+    enabled:
+      "Coupon enabled and connected to Creem.",
+    disabled:
+      "Coupon disabled and its Creem mapping cleared.",
+    deleted:
+      "Coupon deleted from Embernix and Creem.",
   };
 
   return (
@@ -144,7 +300,8 @@ export default async function AdminCouponsPage({
           </h1>
 
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Manage Embernix discounts and their Creem connections.
+            Manage Embernix discounts and their Creem
+            connections.
           </p>
         </div>
 
@@ -166,20 +323,23 @@ export default async function AdminCouponsPage({
         </div>
       )}
 
-      {query.success && successMessages[query.success] && (
-        <div
-          role="status"
-          className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
-        >
-          {successMessages[query.success]}
-        </div>
-      )}
+      {query.success &&
+        successMessages[query.success] && (
+          <div
+            role="status"
+            className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
+          >
+            {successMessages[query.success]}
+          </div>
+        )}
 
       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6 text-[var(--muted)]">
-        To change a synchronized coupon's discount rules,
-        disable it first, edit the settings, then enable it
-        again. Disabling is blocked while an active unpaid
-        checkout is using that coupon.
+        Coupons are checked against Creem when you open
+        this page. If a discount was removed directly in
+        Creem, its status will show as missing. Use
+        Delete to remove its remaining Embernix record.
+        Coupons linked to active unpaid checkouts cannot
+        be deleted.
       </div>
 
       {error && (
@@ -239,16 +399,29 @@ export default async function AdminCouponsPage({
 
               <tbody>
                 {coupons.map((coupon) => {
-                  const status = getStatus(coupon);
-                  const StatusIcon = status.Icon;
+                  const remoteStatus =
+                    remoteStatuses.get(coupon.id);
 
-                  const toggle = toggleCouponStatus.bind(
-                    null,
-                    coupon.id,
-                    !coupon.active
+                  const status = getStatus(
+                    coupon,
+                    remoteStatus
                   );
 
+                  const StatusIcon = status.Icon;
+
+                  const toggle =
+                    toggleCouponStatus.bind(
+                      null,
+                      coupon.id,
+                      !coupon.active
+                    );
+
                   const sync = syncCoupon.bind(
+                    null,
+                    coupon.id
+                  );
+
+                  const remove = deleteCoupon.bind(
                     null,
                     coupon.id
                   );
@@ -293,9 +466,13 @@ export default async function AdminCouponsPage({
 
                             <p
                               className="mt-1 max-w-[150px] truncate font-mono text-xs text-[var(--muted)]"
-                              title={coupon.creem_discount_id}
+                              title={
+                                coupon.creem_discount_id
+                              }
                             >
-                              {coupon.creem_discount_id}
+                              {
+                                coupon.creem_discount_id
+                              }
                             </p>
                           </div>
                         ) : (
@@ -315,7 +492,7 @@ export default async function AdminCouponsPage({
                       </td>
 
                       <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex items-center justify-end gap-2">
                           <Link
                             href={`/admin/coupons/${coupon.id}/edit`}
                             className="inline-flex h-9 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium hover:bg-[var(--surface-hover)]"
@@ -346,6 +523,38 @@ export default async function AdminCouponsPage({
                                 : "Enable"}
                             </button>
                           </form>
+
+                          <details className="relative">
+                            <summary className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-xl border border-red-200 px-3 text-sm font-medium text-red-700 hover:bg-red-50">
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Delete
+                            </summary>
+
+                            <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
+                              <p className="text-sm font-semibold text-[var(--foreground)]">
+                                Delete {coupon.code}?
+                              </p>
+
+                              <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                                This removes the discount
+                                from Creem and deletes the
+                                coupon from Embernix.
+                              </p>
+
+                              <form
+                                action={remove}
+                                className="mt-4"
+                              >
+                                <button
+                                  type="submit"
+                                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-semibold text-white hover:bg-red-700"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Confirm delete
+                                </button>
+                              </form>
+                            </div>
+                          </details>
                         </div>
                       </td>
                     </tr>
@@ -358,8 +567,10 @@ export default async function AdminCouponsPage({
       )}
 
       <p className="text-xs text-[var(--muted)]">
-        Mapping status is local. Checkout performs a separate
-        verification against Creem before accepting a coupon.
+        Creem status is verified on page load.
+        Temporary Creem API failures are shown separately
+        and never trigger automatic deletion. Checkout
+        independently verifies coupon eligibility.
       </p>
     </div>
   );
